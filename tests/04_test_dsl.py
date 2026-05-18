@@ -382,3 +382,58 @@ transitions:
         assert len(config.states) == 7
         assert len(config.transitions) == 9
         assert len(config.global_guidelines) == 3
+
+
+# ---------------------------------------------------------------------------
+# load_journey — fraud.json 示例文件加载
+# ---------------------------------------------------------------------------
+
+class TestLoaderFraudJSON示例:
+    def test_fraud_json与yaml内容等价(self):
+        """验证 tests/fraud.json 与 tests/fraud.yaml 解析结果等价。"""
+        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        if not os.path.exists(json_path):
+            pytest.skip("tests/fraud.json 不存在，跳过")
+
+        config = load_journey(json_path)
+        assert config.title == "处理潜在欺诈交易"
+        assert len(config.states) == 7
+        assert len(config.transitions) == 9
+        assert len(config.global_guidelines) == 3
+
+    def test_fraud_json状态名正确(self):
+        """验证 fraud.json 中的状态名与 fraud.yaml 一致。"""
+        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        if not os.path.exists(json_path):
+            pytest.skip("tests/fraud.json 不存在，跳过")
+
+        config = load_journey(json_path)
+        state_names = [s.name for s in config.states]
+        assert state_names == [
+            "identity_verify", "collect_info", "risk_assess",
+            "high_risk", "medium_risk", "low_risk", "closing",
+        ]
+
+    def test_fraud_json高风险状态有节点规则(self):
+        """验证 fraud.json 中 high_risk 状态含有 2 条节点级规则。"""
+        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        if not os.path.exists(json_path):
+            pytest.skip("tests/fraud.json 不存在，跳过")
+
+        config = load_journey(json_path)
+        high_risk = next(s for s in config.states if s.name == "high_risk")
+        assert len(high_risk.guidelines) == 2
+        assert high_risk.guidelines[0].priority == 95
+
+    def test_fraud_json预设话术正确解析(self):
+        """验证 identity_verify 状态的 canned_response 被正确解析。"""
+        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        if not os.path.exists(json_path):
+            pytest.skip("tests/fraud.json 不存在，跳过")
+
+        config = load_journey(json_path)
+        verify = next(s for s in config.states if s.name == "identity_verify")
+        assert verify.canned_response is not None
+        assert verify.canned_response.strict is True
+        assert "身份" in verify.canned_response.template
+
