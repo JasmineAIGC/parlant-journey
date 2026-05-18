@@ -1,12 +1,12 @@
 """
-parlant_journey
-~~~~~~~~~~~~~~~
+journey
+~~~~~~~
 
 Declarative Journey builder for the Parlant conversational AI framework.
 
 Public API — everything a caller needs is exported from here::
 
-    from parlant_journey import (
+    from journey import (
         create_journey,
         register_journeys,
         JourneyConfig,

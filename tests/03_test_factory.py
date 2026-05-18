@@ -1,4 +1,4 @@
-"""Tests for parlant_journey.factory."""
+"""Tests for journey.factory."""
 
 from __future__ import annotations
 
@@ -29,8 +29,8 @@ def _ensure_parlant_stub() -> None:
 
 _ensure_parlant_stub()
 
-from parlant_journey.factory import create_journey, register_journeys  # noqa: E402
-from parlant_journey.models import JourneyConfig, StateConfig  # noqa: E402
+from journey.factory import create_journey, register_journeys  # noqa: E402
+from journey.models import JourneyConfig, StateConfig  # noqa: E402
 
 
 def _simple_config(title: str = "Test") -> JourneyConfig:
@@ -60,7 +60,7 @@ class TestCreateJourney:
 
         builder_class, builder_instance = _mock_builder(journey_mock)
 
-        with patch("parlant_journey.factory.JourneyBuilder", builder_class):
+        with patch("journey.factory.JourneyBuilder", builder_class):
             result = await create_journey(agent_mock, config)
 
         builder_class.assert_called_once_with(agent_mock, config)
@@ -75,7 +75,7 @@ class TestCreateJourney:
 
         builder_class, _ = _mock_builder(journey_mock)
 
-        with patch("parlant_journey.factory.JourneyBuilder", builder_class):
+        with patch("journey.factory.JourneyBuilder", builder_class):
             result = await create_journey(agent_mock, config)
 
         assert result is journey_mock
@@ -97,7 +97,7 @@ class TestRegisterJourneys:
             call_count += 1
             return j
 
-        with patch("parlant_journey.factory.create_journey", side_effect=fake_create):
+        with patch("journey.factory.create_journey", side_effect=fake_create):
             result = await register_journeys(agent_mock, configs)
 
         assert result == [j1, j2, j3]
@@ -106,7 +106,7 @@ class TestRegisterJourneys:
     @pytest.mark.asyncio
     async def test_empty_configs_returns_empty_list(self):
         agent_mock = MagicMock()
-        with patch("parlant_journey.factory.create_journey") as mock_create:
+        with patch("journey.factory.create_journey") as mock_create:
             result = await register_journeys(agent_mock, [])
 
         mock_create.assert_not_awaited()
@@ -122,7 +122,7 @@ class TestRegisterJourneys:
             titles_seen.append(config.title)
             return MagicMock()
 
-        with patch("parlant_journey.factory.create_journey", side_effect=fake_create):
+        with patch("journey.factory.create_journey", side_effect=fake_create):
             await register_journeys(agent_mock, configs)
 
         assert titles_seen == ["J0", "J1", "J2", "J3", "J4"]

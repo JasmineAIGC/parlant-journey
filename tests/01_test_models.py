@@ -1,9 +1,9 @@
-"""Unit tests for parlant_journey.models — pure data layer, no mocking needed."""
+"""Unit tests for journey.models — pure data layer, no mocking needed."""
 
 import pytest
 from dataclasses import fields
 
-from parlant_journey.models import (
+from journey.models import (
     CannedResponseConfig,
     GuidelineConfig,
     JourneyConfig,

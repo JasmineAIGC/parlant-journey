@@ -1,5 +1,5 @@
 """
-Tests for parlant_journey.builder.JourneyBuilder.
+Tests for journey.builder.JourneyBuilder.
 
 All Parlant SDK objects are replaced with :class:`unittest.mock.AsyncMock` /
 :class:`unittest.mock.MagicMock` so the tests run without a live Parlant server.
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,8 +38,8 @@ def _make_parlant_stub() -> types.ModuleType:
 _sdk = _make_parlant_stub()
 
 # Now we can import our own modules safely
-from parlant_journey.builder import JourneyBuilder  # noqa: E402
-from parlant_journey.models import (  # noqa: E402
+from journey.builder import JourneyBuilder  # noqa: E402
+from journey.models import (  # noqa: E402
     CannedResponseConfig,
     GuidelineConfig,
     JourneyConfig,
@@ -169,12 +169,10 @@ class TestBuildDagLinear:
         # Set up chained states: initial → A → B → C
         trans_A = MagicMock()
         state_A = MagicMock()
-        state_A.transition_to = AsyncMock()
         trans_A.target = state_A
 
         trans_B = MagicMock()
         state_B = MagicMock()
-        state_B.transition_to = AsyncMock()
         trans_B.target = state_B
 
         trans_C = MagicMock()
@@ -370,7 +368,6 @@ class TestBuildDagCannedResponses:
         )
         builder = JourneyBuilder(agent, config)
         builder._journey = journey
-        # Pre-populate canrep_map as _create_canned_responses would
         builder._canrep_map["A"] = canned_mock
         await builder._build_dag()
 

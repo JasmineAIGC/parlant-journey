@@ -1,10 +1,10 @@
 """
-parlant_journey.factory
-~~~~~~~~~~~~~~~~~~~~~~~
+journey.factory
+~~~~~~~~~~~~~~~
 
 Public entry-point layer.
 
-Thin wrappers that instantiate :class:`~parlant_journey.builder.JourneyBuilder`
+Thin wrappers that instantiate :class:`~journey.builder.JourneyBuilder`
 and drive it to completion, hiding the builder from callers entirely.
 """
 
@@ -19,11 +19,11 @@ from .models import JourneyConfig
 
 
 async def create_journey(agent: p.Agent, config: JourneyConfig) -> p.Journey:
-    """Create a single Parlant Journey from a declarative :class:`~parlant_journey.models.JourneyConfig`.
+    """Create a single Parlant Journey from a declarative :class:`~journey.models.JourneyConfig`.
 
     Args:
         agent:  An already-created Parlant :class:`~parlant.sdk.Agent`.
-        config: Fully populated :class:`~parlant_journey.models.JourneyConfig`.
+        config: Fully populated :class:`~journey.models.JourneyConfig`.
 
     Returns:
         The constructed Parlant :class:`~parlant.sdk.Journey` instance.
@@ -43,7 +43,7 @@ async def register_journeys(
 
     Args:
         agent:   An already-created Parlant :class:`~parlant.sdk.Agent`.
-        configs: Ordered list of :class:`~parlant_journey.models.JourneyConfig`.
+        configs: Ordered list of :class:`~journey.models.JourneyConfig`.
 
     Returns:
         List of constructed :class:`~parlant.sdk.Journey` instances in the same

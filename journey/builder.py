@@ -1,12 +1,12 @@
 """
-parlant_journey.builder
-~~~~~~~~~~~~~~~~~~~~~~~
+journey.builder
+~~~~~~~~~~~~~~~
 
 Translation layer: JourneyConfig → Parlant Journey API calls.
 
 Internal implementation detail — not exposed in the public API.
 
-Data flow (ARCHITECTURE_Version2.md §2.5):
+Data flow:
 
     factory.create_journey(agent, config)
       └─ JourneyBuilder(agent, config).build()
@@ -27,13 +27,12 @@ from .models import JourneyConfig, StateConfig
 
 
 class JourneyBuilder:
-    """Translates a :class:`~parlant_journey.models.JourneyConfig` into a live
+    """Translates a :class:`~journey.models.JourneyConfig` into a live
     Parlant :class:`~parlant.sdk.Journey` by issuing the appropriate SDK calls
     in the correct order.
 
     This class is an **internal implementation detail** and must not be imported
-    directly by callers — use :func:`~parlant_journey.factory.create_journey`
-    instead.
+    directly by callers — use :func:`~journey.factory.create_journey` instead.
     """
 
     def __init__(self, agent: p.Agent, config: JourneyConfig) -> None:

@@ -26,4 +26,4 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["parlant_journey*"]
+include = ["journey*"]

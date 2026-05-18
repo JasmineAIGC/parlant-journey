@@ -27,7 +27,7 @@
 │   server = p.Server(...)                │
 │   agent  = await server.create_agent()  │
 │                                         │
-│   from parlant_journey import           │
+│   from journey import                   │
 │       create_journey, JourneyConfig     │
 │                                         │
 │   await create_journey(agent, config)   │
@@ -69,26 +69,31 @@
 ```
 parlant-journey/
 │
-├── parlant_journey/          # 可安装包，对外暴露的唯一命名空间
-│   ├── __init__.py           # 公开 API 入口（re-export）
-│   ├── models.py             # 纯数据层（Config Dataclasses）
-│   ├── builder.py            # 翻译层（JourneyBuilder，内部私有）
-│   └── factory.py            # 公开入口层（create_journey / register_journeys）
+├── journey/                   # 可安装包，对外暴露的唯一命名空间
+│   ├── __init__.py            # 公开 API 入口（re-export）
+│   ├── models.py              # 纯数据层（Config Dataclasses）
+│   ├── builder.py             # 翻译层（JourneyBuilder，内部私有）
+│   └── factory.py             # 公开入口层（create_journey / register_journeys）
 │
-├── tests/
-│   ├── __init__.py
-│   ├── test_models.py        # 数据模型单元测试
-│   ├── test_builder.py       # 构建器测试（mock Parlant SDK）
-│   └── test_factory.py       # 工厂函数测试
+├── tests/                     # 测试 + 演示（数字前缀区分类型）
+│   ├── 00_fraud_demo.py       # 完整欺诈处理对话演示（JourneySimulator + LLMClient）
+│   ├── 01_test_models.py      # 数据模型单元测试
+│   ├── 02_test_builder.py     # 构建器测试（mock Parlant SDK）
+│   └── 03_test_factory.py     # 工厂函数测试
 │
-├── examples/
-│   └── fraud.py              # 欺诈处理 Journey 完整示例
+├── third_party/
+│   ├── .env                   # LLM / Embedding 配置（API Key、Base URL、模型名）
+│   └── model_client/          # LLM + Embedding 客户端（demo 演示依赖）
+│       ├── api/llm.py         # LLMClient — 基于 LiteLLM 的异步 LLM 调用
+│       ├── api/embedding.py   # OpenAILikeEmbedding — OpenAI 兼容 Embedding
+│       └── local/embedding.py # SentenceTransformerEmbedding — 本地推理
 │
 ├── docs/
+│   ├── ARCHITECTURE.md        # ← 本文档（权威技术方案）
 │   ├── ARCHITECTURE_Version2.md   # 架构设计草稿（参考）
 │   └── parlant-journey.md         # Guidelines & Canned Responses 设计（参考）
 │
-├── ARCHITECTURE.md           # ← 本文档（权威技术方案）
+├── requirements.txt           # 完整依赖清单
 ├── pyproject.toml
 └── README.md
 ```
@@ -100,7 +105,7 @@ parlant-journey/
 ### 3.1 层次图
 
 ```
-parlant_journey/
+journey/
 │
 ├── models.py          纯数据层
 │   │
@@ -144,7 +149,7 @@ parlant_journey/
 调用方**只需从一个命名空间导入**：
 
 ```python
-from parlant_journey import (
+from journey import (
     # 工厂函数（主入口）
     create_journey,
     register_journeys,
@@ -186,7 +191,7 @@ from parlant_journey import (
 
 ```
 调用方
-  │  from parlant_journey import create_journey, JourneyConfig
+  │  from journey import create_journey, JourneyConfig
   │  await create_journey(agent, config)
   │
   ▼
@@ -252,7 +257,7 @@ pip install parlant-journey
 
 ```python
 import parlant.sdk as p
-from parlant_journey import create_journey, JourneyConfig, StateConfig, TransitionConfig
+from journey import create_journey, JourneyConfig, StateConfig, TransitionConfig
 
 async with p.Server(...) as server:
     agent = await server.create_agent(...)
@@ -273,12 +278,12 @@ async with p.Server(...) as server:
     journey = await create_journey(agent, config)
 ```
 
-完整示例见 [`examples/fraud.py`](examples/fraud.py)。
+完整示例见 [`tests/00_fraud_demo.py`](../tests/00_fraud_demo.py)（含 LLMClient 驱动的完整对话演示）。
 
 ### 批量注册
 
 ```python
-from parlant_journey import register_journeys
+from journey import register_journeys
 
 journeys = await register_journeys(agent, [
     fraud_config,
@@ -299,18 +304,42 @@ dependencies = [
 ]
 ```
 
-本库不引入任何其他运行时依赖。
+本库核心（`journey/`）不引入任何其他运行时依赖。
+
+演示与 LLM 集成需要（`requirements.txt`）：
+
+| 包 | 用途 |
+|----|------|
+| `litellm` | LLMClient 底层（third_party/model_client/api/llm.py） |
+| `openai>=1.0.0` | Embedding 客户端底层 |
+| `python-dotenv` | 读取 .env 配置文件 |
+| `pytest>=7` + `pytest-asyncio>=0.23` | 测试框架 |
 
 ---
 
-## 十、测试
+## 十、测试与演示
+
+### 单元测试（无需 LLM 服务）
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest tests/01_test_models.py tests/02_test_builder.py tests/03_test_factory.py -v
 ```
 
 测试使用 `unittest.mock` 完整模拟 Parlant SDK，无需启动真实服务器。
+
+### 完整对话演示（需要 LLM 服务）
+
+```bash
+# 配置 third_party/.env（QWEN3_API_KEY / QWEN3_BASE_URL / QWEN3_MODEL）
+python tests/00_fraud_demo.py
+```
+
+`tests/00_fraud_demo.py` 内置 `JourneySimulator`，使用 LLMClient 驱动完整对话：
+- 解析 `JourneyConfig` 中的状态 DAG
+- 在每个 chat_state 调用 LLM 生成 Agent 回复
+- 用 LLM 判断转移条件是否满足并自动推进状态
+- 无需 Parlant Server，可独立运行
 
 ---
 
@@ -318,6 +347,6 @@ pytest
 
 | 文档 | 说明 |
 |------|------|
-| [`docs/ARCHITECTURE_Version2.md`](docs/ARCHITECTURE_Version2.md) | 架构设计草稿（数据流、分层设计） |
-| [`docs/parlant-journey.md`](docs/parlant-journey.md) | Guidelines & Canned Responses 功能设计 |
-| [`examples/fraud.py`](examples/fraud.py) | 欺诈处理完整示例（三层控制综合演示） |
+| [`docs/ARCHITECTURE_Version2.md`](ARCHITECTURE_Version2.md) | 架构设计草稿（数据流、分层设计） |
+| [`docs/parlant-journey.md`](parlant-journey.md) | Guidelines & Canned Responses 功能设计 |
+| [`tests/00_fraud_demo.py`](../tests/00_fraud_demo.py) | 欺诈处理完整对话演示（三层控制 + LLMClient） |

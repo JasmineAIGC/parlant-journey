@@ -1,10 +1,10 @@
 """
-parlant_journey.models
-~~~~~~~~~~~~~~~~~~~~~~
+journey.models
+~~~~~~~~~~~~~~
 
 Pure data layer — zero side-effects, zero external dependencies.
 
-Three orthogonal control dimensions (from ARCHITECTURE_Version2.md §3.3):
+Three orthogonal control dimensions:
 
   流程（路径）   states + transitions       → transition_to()
   行为（规则）   guidelines（节点级 + 全局） → journey.create_guideline()

@@ -6,14 +6,16 @@
 ## 安装
 
 ```bash
-pip install parlant-journey
+pip install -r requirements.txt
+# 或仅安装核心
+pip install parlant
 ```
 
 ## 快速开始
 
 ```python
 import parlant.sdk as p
-from parlant_journey import (
+from journey import (
     create_journey,
     JourneyConfig,
     StateConfig,
@@ -59,14 +61,39 @@ async with p.Server(...) as server:
 | 行为（规则） | `guidelines`（节点级 + 全局） | 条件触发的行为约束 |
 | 话术（合规） | `canned_response`（节点级） | 关键节点锁定话术，零幻觉 |
 
+## 完整对话演示
+
+无需 Parlant Server，直接运行欺诈处理全流程对话演示（使用 LLMClient 驱动）：
+
+```bash
+# 1. 在 third_party/.env 中配置 LLM 服务
+# 2. 安装依赖
+pip install -r requirements.txt
+# 3. 运行演示
+python tests/00_fraud_demo.py
+```
+
+## 目录说明
+
+```
+journey/              核心包（Python import: from journey import ...）
+tests/
+  00_fraud_demo.py    完整欺诈处理对话演示（JourneySimulator + LLMClient）
+  01_test_models.py   数据模型单元测试
+  02_test_builder.py  构建器单元测试（mock SDK）
+  03_test_factory.py  工厂函数单元测试
+third_party/          LLM / Embedding 客户端（model_client）
+docs/ARCHITECTURE.md  完整技术方案（权威文档）
+```
+
 ## 文档
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 完整技术方案（推荐阅读）
-- [examples/fraud.py](examples/fraud.py) — 欺诈处理完整示例
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 完整技术方案（推荐阅读）
+- [tests/00_fraud_demo.py](tests/00_fraud_demo.py) — 欺诈处理完整对话演示
 
 ## 测试
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest tests/01_test_models.py tests/02_test_builder.py tests/03_test_factory.py -v
 ```
