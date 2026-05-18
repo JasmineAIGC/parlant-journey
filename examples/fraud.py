@@ -200,7 +200,7 @@ async def main() -> None:
     async with p.Server(
         host="localhost",
         port=8800,
-        nlp_service="<your-nlp-service-url>",  # 替换为实际 NLP 服务地址
+        nlp_service="http://localhost:5000",  # 替换为实际 NLP 服务地址，例如 "https://api.example.com/nlp"
     ) as server:
         agent = await server.create_agent(
             name="FraudHandlingAgent",

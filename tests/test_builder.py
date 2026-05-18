@@ -214,8 +214,12 @@ class TestBuildDagLinear:
     async def test_conditional_transition_passes_condition(self):
         agent, journey, initial_state, _ = _make_agent_and_journey()
 
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
-        trans_B = MagicMock(); state_B = MagicMock(); trans_B.target = state_B
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
+        trans_B = MagicMock()
+        state_B = MagicMock()
+        trans_B.target = state_B
 
         initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(return_value=trans_B)
@@ -246,9 +250,15 @@ class TestBuildDagBranching:
     async def test_branching_creates_separate_states(self):
         agent, journey, initial_state, _ = _make_agent_and_journey()
 
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
-        trans_B = MagicMock(); state_B = MagicMock(); trans_B.target = state_B
-        trans_C = MagicMock(); state_C = MagicMock(); trans_C.target = state_C
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
+        trans_B = MagicMock()
+        state_B = MagicMock()
+        trans_B.target = state_B
+        trans_C = MagicMock()
+        state_C = MagicMock()
+        trans_C.target = state_C
 
         initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(side_effect=[trans_B, trans_C])
@@ -285,10 +295,18 @@ class TestBuildDagConverging:
         agent, journey, initial_state, _ = _make_agent_and_journey()
 
         # A is root; B and C are branches; D is the convergence point
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
-        trans_B = MagicMock(); state_B = MagicMock(); trans_B.target = state_B
-        trans_C = MagicMock(); state_C = MagicMock(); trans_C.target = state_C
-        trans_D = MagicMock(); state_D = MagicMock(); trans_D.target = state_D
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
+        trans_B = MagicMock()
+        state_B = MagicMock()
+        trans_B.target = state_B
+        trans_C = MagicMock()
+        state_C = MagicMock()
+        trans_C.target = state_C
+        trans_D = MagicMock()
+        state_D = MagicMock()
+        trans_D.target = state_D
 
         initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(side_effect=[trans_B, trans_C])
@@ -332,7 +350,9 @@ class TestBuildDagCannedResponses:
     async def test_canned_response_attached_to_state(self):
         agent, journey, initial_state, canned_mock = _make_agent_and_journey()
 
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
         initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
@@ -362,7 +382,9 @@ class TestBuildDagCannedResponses:
     async def test_fluid_composition_mode_when_strict_false(self):
         agent, journey, initial_state, canned_mock = _make_agent_and_journey()
 
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
         initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
@@ -455,7 +477,9 @@ class TestBuildIntegration:
     async def test_build_calls_all_steps_and_returns_journey(self):
         agent, journey, initial_state, _ = _make_agent_and_journey()
 
-        trans_A = MagicMock(); state_A = MagicMock(); trans_A.target = state_A
+        trans_A = MagicMock()
+        state_A = MagicMock()
+        trans_A.target = state_A
         initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
