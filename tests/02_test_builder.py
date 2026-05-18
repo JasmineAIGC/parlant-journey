@@ -1,45 +1,20 @@
 """
-Tests for journey.builder.JourneyBuilder.
+02_test_builder.py — journey.builder.JourneyBuilder 单元测试
 
-All Parlant SDK objects are replaced with :class:`unittest.mock.AsyncMock` /
-:class:`unittest.mock.MagicMock` so the tests run without a live Parlant server.
+使用 conftest.py 中的公共 fixtures（mock_agent / mock_journey / mock_canned），
+以及本文件的辅助函数 _trans()，简化 Parlant SDK 的 mock 搭建。
+
+parlant.sdk 桩由 conftest.py 在收集阶段统一注入，无需在此重复定义。
 """
 
 from __future__ import annotations
 
-import sys
-import types
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Stub out the parlant.sdk module so tests run without the real package
-# ---------------------------------------------------------------------------
-
-def _make_parlant_stub() -> types.ModuleType:
-    parlant = types.ModuleType("parlant")
-    sdk = types.ModuleType("parlant.sdk")
-
-    class CompositionMode:
-        STRICT = "STRICT"
-        FLUID = "FLUID"
-
-    sdk.CompositionMode = CompositionMode
-    sdk.Agent = object
-    sdk.Journey = object
-
-    parlant.sdk = sdk
-    sys.modules.setdefault("parlant", parlant)
-    sys.modules.setdefault("parlant.sdk", sdk)
-    return sdk
-
-
-_sdk = _make_parlant_stub()
-
-# Now we can import our own modules safely
-from journey.builder import JourneyBuilder  # noqa: E402
-from journey.models import (  # noqa: E402
+from journey.builder import JourneyBuilder
+from journey.models import (
     CannedResponseConfig,
     GuidelineConfig,
     JourneyConfig,
@@ -49,45 +24,48 @@ from journey.models import (  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 测试辅助
 # ---------------------------------------------------------------------------
 
-def _make_state_mock(name: str = "state") -> MagicMock:
-    """Return a mock that behaves like a Parlant state object."""
-    state = MagicMock(name=name)
-    transition = MagicMock(name=f"{name}_transition")
-    transition.target = MagicMock(name=f"{name}_target")
-    transition.target.transition_to = AsyncMock(return_value=transition)
-    state.transition_to = AsyncMock(return_value=transition)
-    return state
+def _trans(chat: str = "默认指令") -> tuple:
+    """创建一对 (transition_mock, state_mock)，模拟 transition_to() 的返回值链。
+
+    Args:
+        chat: 仅用于 mock 的名称标注，方便调试时识别。
+
+    Returns:
+        (transition_mock, state_mock)：
+          - transition_mock.target == state_mock
+          - state_mock.transition_to  是可被 await 的 AsyncMock
+    """
+    state = MagicMock(name=f"state[{chat}]")
+    trans = MagicMock(name=f"trans[{chat}]")
+    trans.target = state
+    state.transition_to = AsyncMock()
+    return trans, state
 
 
-def _make_agent_and_journey() -> tuple:
-    """Return (mock_agent, mock_journey, mock_initial_state)."""
-    agent = MagicMock()
-    journey = MagicMock()
-    initial_state = _make_state_mock("initial")
-
-    journey.initial_state = initial_state
-    journey.create_guideline = AsyncMock()
-
-    canned_response = MagicMock(name="canned_response")
-    agent.create_journey = AsyncMock(return_value=journey)
-    agent.create_canned_response = AsyncMock(return_value=canned_response)
-
-    return agent, journey, initial_state, canned_response
-
-
-def _linear_config() -> JourneyConfig:
-    """A → B → C (linear, no conditions)."""
+def _简单配置(title: str = "测试流程") -> JourneyConfig:
+    """返回最小可用的 JourneyConfig（单状态，无转移）。"""
     return JourneyConfig(
-        title="Linear",
+        title=title,
         triggers=["go"],
-        description="Linear test journey",
+        description="单元测试用配置",
+        states=[StateConfig(name="A", chat_state="执行 A")],
+        transitions=[],
+    )
+
+
+def _线性配置() -> JourneyConfig:
+    """返回 A → B → C 的线性配置。"""
+    return JourneyConfig(
+        title="线性流程",
+        triggers=["go"],
+        description="线性测试",
         states=[
-            StateConfig(name="A", chat_state="Do A"),
-            StateConfig(name="B", chat_state="Do B"),
-            StateConfig(name="C", chat_state="Do C"),
+            StateConfig(name="A", chat_state="执行 A"),
+            StateConfig(name="B", chat_state="执行 B"),
+            StateConfig(name="C", chat_state="执行 C"),
         ],
         transitions=[
             TransitionConfig(source="A", target="B"),
@@ -100,415 +78,327 @@ def _linear_config() -> JourneyConfig:
 # _create_journey
 # ---------------------------------------------------------------------------
 
-class TestCreateJourney:
+class Test创建Journey外壳:
     @pytest.mark.asyncio
-    async def test_calls_agent_create_journey_with_correct_args(self):
-        agent, journey, *_ = _make_agent_and_journey()
-        config = _linear_config()
-        builder = JourneyBuilder(agent, config)
+    async def test_使用正确参数调用SDK(self, mock_agent, mock_journey):
+        config = _线性配置()
+        builder = JourneyBuilder(mock_agent, config)
         await builder._create_journey()
 
-        agent.create_journey.assert_awaited_once_with(
-            title="Linear",
+        mock_agent.create_journey.assert_awaited_once_with(
+            title="线性流程",
             triggers=["go"],
-            description="Linear test journey",
+            description="线性测试",
         )
-        assert builder._journey is journey
+        assert builder._journey is mock_journey
 
 
 # ---------------------------------------------------------------------------
 # _create_canned_responses
 # ---------------------------------------------------------------------------
 
-class TestCreateCannedResponses:
+class Test预创建预设话术:
     @pytest.mark.asyncio
-    async def test_creates_canned_response_for_states_that_have_one(self):
-        agent, journey, *_ = _make_agent_and_journey()
+    async def test_有话术配置时创建CannedResponse(self, mock_agent, mock_journey):
         config = JourneyConfig(
-            title="T",
-            triggers=["t"],
-            description="d",
+            title="T", triggers=["t"], description="d",
             states=[
-                StateConfig(
-                    name="verify",
-                    canned_response=CannedResponseConfig(template="Please verify."),
-                ),
-                StateConfig(name="proceed", chat_state="Go ahead."),
+                StateConfig(name="verify",
+                            canned_response=CannedResponseConfig(template="请验证身份。")),
+                StateConfig(name="proceed", chat_state="继续。"),
             ],
             transitions=[TransitionConfig(source="verify", target="proceed")],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._create_canned_responses()
 
-        agent.create_canned_response.assert_awaited_once_with(template="Please verify.")
+        mock_agent.create_canned_response.assert_awaited_once_with(template="请验证身份。")
         assert "verify" in builder._canrep_map
         assert "proceed" not in builder._canrep_map
 
     @pytest.mark.asyncio
-    async def test_no_canned_responses_when_none_configured(self):
-        agent, journey, *_ = _make_agent_and_journey()
-        config = _linear_config()
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+    async def test_无话术配置时不调用SDK(self, mock_agent, mock_journey):
+        builder = JourneyBuilder(mock_agent, _线性配置())
+        builder._journey = mock_journey
         await builder._create_canned_responses()
 
-        agent.create_canned_response.assert_not_awaited()
+        mock_agent.create_canned_response.assert_not_awaited()
         assert builder._canrep_map == {}
 
 
 # ---------------------------------------------------------------------------
-# _build_dag — linear topology
+# _build_dag — 线性拓扑
 # ---------------------------------------------------------------------------
 
-class TestBuildDagLinear:
+class TestDAG线性拓扑:
     @pytest.mark.asyncio
-    async def test_linear_creates_states_in_order(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
+    async def test_线性流程按顺序创建状态(self, mock_agent, mock_journey):
+        # 搭建 initial → A → B → C 的 mock 链
+        trans_A, state_A = _trans("A")
+        trans_B, state_B = _trans("B")
+        trans_C, state_C = _trans("C")
 
-        # Set up chained states: initial → A → B → C
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-
-        trans_B = MagicMock()
-        state_B = MagicMock()
-        trans_B.target = state_B
-
-        trans_C = MagicMock()
-        state_C = MagicMock()
-        trans_C.target = state_C
-
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(return_value=trans_B)
         state_B.transition_to = AsyncMock(return_value=trans_C)
 
-        config = _linear_config()
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, _线性配置())
+        builder._journey = mock_journey
         await builder._build_dag()
 
-        # Root A is created from initial_state
-        initial_state.transition_to.assert_awaited_once()
-        call_kwargs = initial_state.transition_to.call_args.kwargs
-        assert call_kwargs.get("chat_state") == "Do A"
+        # 根状态 A 从 initial_state 创建
+        mock_journey.initial_state.transition_to.assert_awaited_once()
+        assert mock_journey.initial_state.transition_to.call_args.kwargs["chat_state"] == "执行 A"
 
-        # B is created from A
-        state_A.transition_to.assert_awaited_once()
-        b_kwargs = state_A.transition_to.call_args.kwargs
-        assert b_kwargs.get("chat_state") == "Do B"
+        # B 从 A 创建，C 从 B 创建
+        assert state_A.transition_to.call_args.kwargs["chat_state"] == "执行 B"
+        assert state_B.transition_to.call_args.kwargs["chat_state"] == "执行 C"
 
-        # C is created from B
-        state_B.transition_to.assert_awaited_once()
-        c_kwargs = state_B.transition_to.call_args.kwargs
-        assert c_kwargs.get("chat_state") == "Do C"
-
-        # State map populated correctly
-        assert builder._state_obj_map["A"] is state_A
-        assert builder._state_obj_map["B"] is state_B
-        assert builder._state_obj_map["C"] is state_C
+        # 状态映射正确
+        assert builder._state_obj_map == {"A": state_A, "B": state_B, "C": state_C}
 
     @pytest.mark.asyncio
-    async def test_conditional_transition_passes_condition(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
+    async def test_有条件转移传递condition参数(self, mock_agent, mock_journey):
+        trans_A, state_A = _trans("A")
+        trans_B, _ = _trans("B")
 
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        trans_B = MagicMock()
-        state_B = MagicMock()
-        trans_B.target = state_B
-
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(return_value=trans_B)
 
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
-            states=[
-                StateConfig(name="A", chat_state="Do A"),
-                StateConfig(name="B", chat_state="Do B"),
-            ],
-            transitions=[TransitionConfig(source="A", target="B", condition="user confirmed")],
+            states=[StateConfig(name="A", chat_state="a"), StateConfig(name="B", chat_state="b")],
+            transitions=[TransitionConfig(source="A", target="B", condition="用户已确认")],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._build_dag()
 
-        state_A.transition_to.assert_awaited_once()
-        kwargs = state_A.transition_to.call_args.kwargs
-        assert kwargs.get("condition") == "user confirmed"
+        assert state_A.transition_to.call_args.kwargs["condition"] == "用户已确认"
 
 
 # ---------------------------------------------------------------------------
-# _build_dag — branching topology
+# _build_dag — 分支拓扑
 # ---------------------------------------------------------------------------
 
-class TestBuildDagBranching:
+class TestDAG分支拓扑:
     @pytest.mark.asyncio
-    async def test_branching_creates_separate_states(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
+    async def test_分支创建两个独立目标状态(self, mock_agent, mock_journey):
+        trans_A, state_A = _trans("A")
+        trans_B, _ = _trans("B")
+        trans_C, _ = _trans("C")
 
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        trans_B = MagicMock()
-        state_B = MagicMock()
-        trans_B.target = state_B
-        trans_C = MagicMock()
-        state_C = MagicMock()
-        trans_C.target = state_C
-
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(side_effect=[trans_B, trans_C])
 
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
             states=[
-                StateConfig(name="A", chat_state="start"),
-                StateConfig(name="B", chat_state="branch B"),
-                StateConfig(name="C", chat_state="branch C"),
+                StateConfig(name="A", chat_state="开始"),
+                StateConfig(name="B", chat_state="分支B"),
+                StateConfig(name="C", chat_state="分支C"),
             ],
             transitions=[
-                TransitionConfig(source="A", target="B", condition="cond B"),
-                TransitionConfig(source="A", target="C", condition="cond C"),
+                TransitionConfig(source="A", target="B", condition="条件B"),
+                TransitionConfig(source="A", target="C", condition="条件C"),
             ],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._build_dag()
 
         assert state_A.transition_to.await_count == 2
-        calls = state_A.transition_to.call_args_list
-        conditions = {c.kwargs.get("condition") for c in calls}
-        assert conditions == {"cond B", "cond C"}
+        conditions = {c.kwargs["condition"] for c in state_A.transition_to.call_args_list}
+        assert conditions == {"条件B", "条件C"}
 
 
 # ---------------------------------------------------------------------------
-# _build_dag — converging topology
+# _build_dag — 汇聚拓扑
 # ---------------------------------------------------------------------------
 
-class TestBuildDagConverging:
+class TestDAG汇聚拓扑:
     @pytest.mark.asyncio
-    async def test_converging_reuses_existing_state(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
+    async def test_汇聚时复用已有状态对象(self, mock_agent, mock_journey):
+        # A → B, A → C, B → D, C → D（D 是汇聚点）
+        trans_A, state_A = _trans("A")
+        trans_B, state_B = _trans("B")
+        trans_C, state_C = _trans("C")
+        trans_D, state_D = _trans("D")
 
-        # A is root; B and C are branches; D is the convergence point
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        trans_B = MagicMock()
-        state_B = MagicMock()
-        trans_B.target = state_B
-        trans_C = MagicMock()
-        state_C = MagicMock()
-        trans_C.target = state_C
-        trans_D = MagicMock()
-        state_D = MagicMock()
-        trans_D.target = state_D
-
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
         state_A.transition_to = AsyncMock(side_effect=[trans_B, trans_C])
         state_B.transition_to = AsyncMock(return_value=trans_D)
-        state_C.transition_to = AsyncMock()  # convergence: no new transition created
+        state_C.transition_to = AsyncMock()  # 汇聚：复用 state_D，不返回新 target
 
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
             states=[
-                StateConfig(name="A", chat_state="start"),
-                StateConfig(name="B", chat_state="branch B"),
-                StateConfig(name="C", chat_state="branch C"),
-                StateConfig(name="D", chat_state="end"),
+                StateConfig(name="A", chat_state="开始"),
+                StateConfig(name="B", chat_state="分支B"),
+                StateConfig(name="C", chat_state="分支C"),
+                StateConfig(name="D", chat_state="终点"),
             ],
             transitions=[
                 TransitionConfig(source="A", target="B"),
                 TransitionConfig(source="A", target="C"),
                 TransitionConfig(source="B", target="D"),
-                TransitionConfig(source="C", target="D"),  # convergence
+                TransitionConfig(source="C", target="D"),  # 汇聚
             ],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._build_dag()
 
-        # D was created once (from B)
+        # D 只被创建一次（从 B）
         assert builder._state_obj_map["D"] is state_D
 
-        # The convergence transition C→D called transition_to with state=state_D
+        # C → D 的转移使用 state=state_D（复用模式）
         state_C.transition_to.assert_awaited_once()
-        kwargs = state_C.transition_to.call_args.kwargs
-        assert kwargs.get("state") is state_D
+        assert state_C.transition_to.call_args.kwargs["state"] is state_D
 
 
 # ---------------------------------------------------------------------------
-# _build_dag — canned responses applied
+# _build_dag — 预设话术附加
 # ---------------------------------------------------------------------------
 
-class TestBuildDagCannedResponses:
+class TestDAG话术附加:
     @pytest.mark.asyncio
-    async def test_canned_response_attached_to_state(self):
-        agent, journey, initial_state, canned_mock = _make_agent_and_journey()
-
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+    async def test_严格模式话术正确附加(self, mock_agent, mock_journey, mock_canned):
+        trans_A, _ = _trans("A")
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
-            states=[
-                StateConfig(
-                    name="A",
-                    chat_state="verify",
-                    canned_response=CannedResponseConfig(
-                        template="Please verify.", strict=True
-                    ),
-                ),
-            ],
+            states=[StateConfig(
+                name="A", chat_state="验证",
+                canned_response=CannedResponseConfig(template="请验证身份。", strict=True),
+            )],
             transitions=[],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
-        builder._canrep_map["A"] = canned_mock
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        builder._canrep_map["A"] = mock_canned  # 模拟步骤②已预创建
         await builder._build_dag()
 
-        kwargs = initial_state.transition_to.call_args.kwargs
-        assert kwargs.get("canned_responses") == [canned_mock]
-        assert kwargs.get("composition_mode") == "STRICT"
+        kwargs = mock_journey.initial_state.transition_to.call_args.kwargs
+        assert kwargs["canned_responses"] == [mock_canned]
+        assert kwargs["composition_mode"] == "STRICT"
 
     @pytest.mark.asyncio
-    async def test_fluid_composition_mode_when_strict_false(self):
-        agent, journey, initial_state, canned_mock = _make_agent_and_journey()
-
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+    async def test_流式模式话术使用FLUID(self, mock_agent, mock_journey, mock_canned):
+        trans_A, _ = _trans("A")
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
-            states=[
-                StateConfig(
-                    name="A",
-                    chat_state="say hi",
-                    canned_response=CannedResponseConfig(template="Hi.", strict=False),
-                ),
-            ],
+            states=[StateConfig(
+                name="A", chat_state="问候",
+                canned_response=CannedResponseConfig(template="你好。", strict=False),
+            )],
             transitions=[],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
-        builder._canrep_map["A"] = canned_mock
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        builder._canrep_map["A"] = mock_canned
         await builder._build_dag()
 
-        kwargs = initial_state.transition_to.call_args.kwargs
-        assert kwargs.get("composition_mode") == "FLUID"
+        kwargs = mock_journey.initial_state.transition_to.call_args.kwargs
+        assert kwargs["composition_mode"] == "FLUID"
 
 
 # ---------------------------------------------------------------------------
 # _register_node_guidelines
 # ---------------------------------------------------------------------------
 
-class TestRegisterNodeGuidelines:
+class Test注册节点规则:
     @pytest.mark.asyncio
-    async def test_registers_each_node_guideline(self):
-        agent, journey, *_ = _make_agent_and_journey()
+    async def test_注册所有节点规则(self, mock_agent, mock_journey):
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
             states=[
-                StateConfig(
-                    name="A",
-                    guidelines=[
-                        GuidelineConfig(condition="x", action="do x", priority=80),
-                        GuidelineConfig(condition="y", action="do y", priority=60),
-                    ],
-                ),
+                StateConfig(name="A", guidelines=[
+                    GuidelineConfig(condition="情况X", action="处理X", priority=80),
+                    GuidelineConfig(condition="情况Y", action="处理Y", priority=60),
+                ]),
                 StateConfig(name="B"),
             ],
             transitions=[],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._register_node_guidelines()
 
-        assert journey.create_guideline.await_count == 2
-        calls = journey.create_guideline.call_args_list
-        conditions = {c.kwargs["condition"] for c in calls}
-        assert conditions == {"x", "y"}
+        assert mock_journey.create_guideline.await_count == 2
+        conditions = {c.kwargs["condition"]
+                      for c in mock_journey.create_guideline.call_args_list}
+        assert conditions == {"情况X", "情况Y"}
 
     @pytest.mark.asyncio
-    async def test_no_guidelines_when_none_configured(self):
-        agent, journey, *_ = _make_agent_and_journey()
-        builder = JourneyBuilder(agent, _linear_config())
-        builder._journey = journey
+    async def test_无规则配置时不调用SDK(self, mock_agent, mock_journey):
+        builder = JourneyBuilder(mock_agent, _线性配置())
+        builder._journey = mock_journey
         await builder._register_node_guidelines()
-        journey.create_guideline.assert_not_awaited()
+        mock_journey.create_guideline.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
 # _register_global_guidelines
 # ---------------------------------------------------------------------------
 
-class TestRegisterGlobalGuidelines:
+class Test注册全局规则:
     @pytest.mark.asyncio
-    async def test_registers_global_guidelines(self):
-        agent, journey, *_ = _make_agent_and_journey()
-        config = _linear_config()
+    async def test_注册全局规则(self, mock_agent, mock_journey):
+        config = _线性配置()
         config.global_guidelines = [
-            GuidelineConfig(condition="angry", action="calm", priority=90),
+            GuidelineConfig(condition="情绪激动", action="安抚", priority=90),
         ]
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
         await builder._register_global_guidelines()
 
-        journey.create_guideline.assert_awaited_once_with(
-            condition="angry", action="calm", priority=90
+        mock_journey.create_guideline.assert_awaited_once_with(
+            condition="情绪激动", action="安抚", priority=90
         )
 
 
 # ---------------------------------------------------------------------------
-# build() — full integration (all steps called)
+# build() 整体集成
 # ---------------------------------------------------------------------------
 
-class TestBuildIntegration:
+class TestBuild整体流程:
     @pytest.mark.asyncio
-    async def test_build_calls_all_steps_and_returns_journey(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
-
-        trans_A = MagicMock()
-        state_A = MagicMock()
-        trans_A.target = state_A
-        initial_state.transition_to = AsyncMock(return_value=trans_A)
+    async def test_所有步骤被调用并返回Journey(self, mock_agent, mock_journey):
+        trans_A, _ = _trans("A")
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
-            title="Smoke", triggers=["s"], description="d",
-            states=[StateConfig(name="A", chat_state="Hello")],
+            title="冒烟测试", triggers=["s"], description="d",
+            states=[StateConfig(name="A", chat_state="你好")],
             transitions=[],
             global_guidelines=[GuidelineConfig(condition="c", action="a", priority=50)],
         )
-        result = await JourneyBuilder(agent, config).build()
+        result = await JourneyBuilder(mock_agent, config).build()
 
-        assert result is journey
-        agent.create_journey.assert_awaited_once()
-        initial_state.transition_to.assert_awaited_once()
-        journey.create_guideline.assert_awaited_once()
+        assert result is mock_journey
+        mock_agent.create_journey.assert_awaited_once()
+        mock_journey.initial_state.transition_to.assert_awaited_once()
+        mock_journey.create_guideline.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_missing_state_config_raises_value_error(self):
-        agent, journey, initial_state, _ = _make_agent_and_journey()
-        initial_state.transition_to = AsyncMock(
-            return_value=MagicMock(target=MagicMock())
-        )
-
+    async def test_缺少StateConfig时抛出ValueError(self, mock_agent, mock_journey):
+        # B 在 transitions 中引用，但未在 states 中定义
         config = JourneyConfig(
             title="T", triggers=["t"], description="d",
             states=[StateConfig(name="A", chat_state="a")],
-            # B is referenced in transitions but not in states
             transitions=[TransitionConfig(source="A", target="B")],
         )
-        builder = JourneyBuilder(agent, config)
-        builder._journey = journey
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        # A 已在 state_obj_map 中（模拟已被创建）
         builder._state_obj_map["A"] = MagicMock(
             transition_to=AsyncMock(return_value=MagicMock(target=MagicMock()))
         )
         with pytest.raises(ValueError, match="B"):
             await builder._build_dag()
+

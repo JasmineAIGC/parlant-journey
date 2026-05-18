@@ -2,19 +2,19 @@
 journey.builder
 ~~~~~~~~~~~~~~~
 
-Translation layer: JourneyConfig → Parlant Journey API calls.
+翻译层：将 JourneyConfig 转换为 Parlant Journey API 调用序列。
 
-Internal implementation detail — not exposed in the public API.
+内部实现细节，不对外暴露。
 
-Data flow:
+数据流：
 
     factory.create_journey(agent, config)
       └─ JourneyBuilder(agent, config).build()
-           ├─ ① _create_journey()
-           ├─ ② _create_canned_responses()
-           ├─ ③ _build_dag()
-           ├─ ④ _register_node_guidelines()
-           └─ ⑤ _register_global_guidelines()
+           ├─ ① _create_journey()          — 创建 Journey 外壳
+           ├─ ② _create_canned_responses() — 预创建所有预设话术
+           ├─ ③ _build_dag()               — 构建状态有向无环图
+           ├─ ④ _register_node_guidelines()  — 注册节点级行为规则
+           └─ ⑤ _register_global_guidelines() — 注册全局行为规则
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ from .models import JourneyConfig, StateConfig
 
 
 class JourneyBuilder:
-    """Translates a :class:`~journey.models.JourneyConfig` into a live
-    Parlant :class:`~parlant.sdk.Journey` by issuing the appropriate SDK calls
-    in the correct order.
+    """将 :class:`~journey.models.JourneyConfig` 翻译为 Parlant Journey 的内部构建器。
 
-    This class is an **internal implementation detail** and must not be imported
-    directly by callers — use :func:`~journey.factory.create_journey` instead.
+    按正确顺序依次调用 Parlant SDK，完成 Journey 的完整构建。
+
+    **注意：** 这是内部实现细节，调用方应使用
+    :func:`~journey.factory.create_journey` 而非直接实例化本类。
     """
 
     def __init__(self, agent: p.Agent, config: JourneyConfig) -> None:
@@ -40,23 +40,23 @@ class JourneyBuilder:
         self._config = config
         self._journey: Optional[p.Journey] = None
 
-        # state_name → p.CannedResponse
+        # 状态名 → Parlant CannedResponse 对象（步骤②预创建）
         self._canrep_map: Dict[str, Any] = {}
 
-        # state_name → Parlant state object (what you call transition_to() on)
+        # 状态名 → Parlant 状态对象（用于后续 transition_to() 调用）
         self._state_obj_map: Dict[str, Any] = {}
 
-        # fast lookup: state_name → StateConfig
+        # 快速查找：状态名 → StateConfig
         self._state_cfg_map: Dict[str, StateConfig] = {
             s.name: s for s in config.states
         }
 
     # ------------------------------------------------------------------
-    # Public entry point
+    # 公开入口
     # ------------------------------------------------------------------
 
     async def build(self) -> p.Journey:
-        """Execute all build steps and return the constructed Journey."""
+        """按顺序执行所有构建步骤，返回构建完成的 Journey 对象。"""
         await self._create_journey()
         await self._create_canned_responses()
         await self._build_dag()
@@ -66,7 +66,7 @@ class JourneyBuilder:
         return self._journey
 
     # ------------------------------------------------------------------
-    # Step ①: create the Journey shell
+    # 步骤①：创建 Journey 外壳
     # ------------------------------------------------------------------
 
     async def _create_journey(self) -> None:
@@ -77,11 +77,11 @@ class JourneyBuilder:
         )
 
     # ------------------------------------------------------------------
-    # Step ②: pre-create all canned responses
+    # 步骤②：预创建所有预设话术
     # ------------------------------------------------------------------
 
     async def _create_canned_responses(self) -> None:
-        """Pre-create every CannedResponse and store in ``_canrep_map``."""
+        """为配置了 canned_response 的状态预创建 CannedResponse 对象，存入 _canrep_map。"""
         for state in self._config.states:
             if state.canned_response is not None:
                 canned = await self._agent.create_canned_response(
@@ -90,81 +90,79 @@ class JourneyBuilder:
                 self._canrep_map[state.name] = canned
 
     # ------------------------------------------------------------------
-    # Step ③: build the state DAG
+    # 步骤③：构建状态 DAG
     # ------------------------------------------------------------------
 
     async def _build_dag(self) -> None:
-        """Walk ``config.transitions`` (in caller-provided topological order)
-        and create Parlant states / transitions accordingly.
+        """按调用方提供的拓扑顺序遍历 transitions，逐步创建 Parlant 状态节点。
 
-        Three topologies are handled automatically:
+        自动处理三种拓扑结构：
 
           线性    A → B → C
-          分支    A → B (cond X)  /  A → C (cond Y)
-          汇聚    B → D  /  C → D  (D reused, not duplicated)
+          分支    A → B（条件 X）  /  A → C（条件 Y）
+          汇聚    B → D  /  C → D  （D 复用同一对象，不重复创建）
 
-        Root states (sources with no incoming edges) are created as direct
-        children of ``journey.initial_state``.
+        根节点（无入边的状态）直接挂在 journey.initial_state 下。
         """
         assert self._journey is not None
 
+        # 计算所有作为 target 的状态名
         all_targets = {t.target for t in self._config.transitions}
         all_state_names = {s.name for s in self._config.states}
-        # Root states: any state that is never a *target* of a transition.
-        # This covers the common case (single root in a linear/branching DAG) as
-        # well as isolated states (configs with no transitions at all).
+
+        # 根节点：从未出现在 target 中的状态（即无入边的状态）
         roots = all_state_names - all_targets
 
-        # ---- create root states from journey.initial_state ----------------
+        # ── 从 journey.initial_state 创建所有根状态 ──────────────────
         for root_name in roots:
             root_cfg = self._state_cfg_map.get(root_name)
             if root_cfg is None:
                 raise ValueError(
-                    f"No StateConfig found for root state '{root_name}'. "
-                    "Every state referenced in transitions must be listed in "
-                    "JourneyConfig.states."
+                    f"根状态 '{root_name}' 没有对应的 StateConfig。"
+                    "请确保 JourneyConfig.states 中包含所有在 transitions 中出现的状态。"
                 )
             kwargs = self._build_state_kwargs(root_cfg)
             root_trans = await self._journey.initial_state.transition_to(**kwargs)
             self._state_obj_map[root_name] = root_trans.target
 
-        # ---- process all transitions in the declared topological order ----
+        # ── 按拓扑顺序处理所有转移边 ─────────────────────────────────
         for trans in self._config.transitions:
             source_obj = self._state_obj_map.get(trans.source)
             if source_obj is None:
                 raise ValueError(
-                    f"Transition source '{trans.source}' has not been created yet. "
-                    "Ensure JourneyConfig.transitions is listed in topological order."
+                    f"转移的源状态 '{trans.source}' 尚未创建。"
+                    "请确保 JourneyConfig.transitions 按拓扑顺序排列。"
                 )
 
+            # 有条件转移时携带 condition 参数
             condition_kwargs: Dict[str, Any] = (
                 {"condition": trans.condition} if trans.condition is not None else {}
             )
 
             if trans.target in self._state_obj_map:
-                # Convergence: reuse the already-created state object
+                # 汇聚场景：目标状态已存在，直接复用（不重复创建）
                 await source_obj.transition_to(
                     state=self._state_obj_map[trans.target],
                     **condition_kwargs,
                 )
             else:
-                # New state: create via transition
+                # 普通场景：目标状态尚不存在，通过 transition_to 创建
                 target_cfg = self._state_cfg_map.get(trans.target)
                 if target_cfg is None:
                     raise ValueError(
-                        f"No StateConfig found for state '{trans.target}'. "
-                        "Every state referenced in transitions must be listed in "
-                        "JourneyConfig.states."
+                        f"目标状态 '{trans.target}' 没有对应的 StateConfig。"
+                        "请确保 JourneyConfig.states 中包含所有在 transitions 中出现的状态。"
                     )
                 kwargs = self._build_state_kwargs(target_cfg, **condition_kwargs)
                 new_trans = await source_obj.transition_to(**kwargs)
                 self._state_obj_map[trans.target] = new_trans.target
 
     # ------------------------------------------------------------------
-    # Step ④: register per-state guidelines
+    # 步骤④：注册节点级行为规则
     # ------------------------------------------------------------------
 
     async def _register_node_guidelines(self) -> None:
+        """遍历所有状态，逐条注册节点级 guideline。"""
         assert self._journey is not None
         for state in self._config.states:
             for guideline in state.guidelines:
@@ -175,10 +173,11 @@ class JourneyBuilder:
                 )
 
     # ------------------------------------------------------------------
-    # Step ⑤: register global guidelines
+    # 步骤⑤：注册全局行为规则
     # ------------------------------------------------------------------
 
     async def _register_global_guidelines(self) -> None:
+        """注册 JourneyConfig.global_guidelines 中的所有全局规则。"""
         assert self._journey is not None
         for guideline in self._config.global_guidelines:
             await self._journey.create_guideline(
@@ -188,7 +187,7 @@ class JourneyBuilder:
             )
 
     # ------------------------------------------------------------------
-    # Helper
+    # 内部工具
     # ------------------------------------------------------------------
 
     def _build_state_kwargs(
@@ -196,14 +195,14 @@ class JourneyBuilder:
         state_cfg: StateConfig,
         **extra: Any,
     ) -> Dict[str, Any]:
-        """Assemble the keyword arguments for a ``transition_to()`` call that
-        creates *state_cfg* as a new Parlant state."""
+        """将 StateConfig 转换为 transition_to() 所需的关键字参数字典。"""
         kwargs: Dict[str, Any] = dict(extra)
 
+        # 携带可读描述
         if state_cfg.description:
             kwargs["description"] = state_cfg.description
 
-        # Attach canned response when pre-created
+        # 挂载预设话术（步骤②已预创建）
         if state_cfg.name in self._canrep_map:
             kwargs["canned_responses"] = [self._canrep_map[state_cfg.name]]
             composition_mode = (
@@ -213,12 +212,13 @@ class JourneyBuilder:
             )
             kwargs["composition_mode"] = composition_mode
 
-        # Tool state or chat state
+        # 工具状态 vs 对话状态
         if state_cfg.tool_state is not None:
             kwargs["tool_state"] = state_cfg.tool_state
             if state_cfg.tool_instruction is not None:
                 kwargs["tool_instruction"] = state_cfg.tool_instruction
         else:
+            # chat_state 兜底：优先用显式值，其次 description，再次 name
             kwargs["chat_state"] = (
                 state_cfg.chat_state
                 if state_cfg.chat_state is not None
@@ -226,3 +226,4 @@ class JourneyBuilder:
             )
 
         return kwargs
+

@@ -256,6 +256,9 @@ class JourneySimulator:
       5. 到达终止状态（无出边）后标记对话结束。
     """
 
+    # 历史截取长度：只取最近 N 轮用于条件判断，在上下文完整性与 token 消耗之间取得平衡
+    MAX_HISTORY_FOR_CONDITION: int = 6
+
     def __init__(self, config: JourneyConfig, llm: "LLMClient") -> None:
         self._config = config
         self._llm = llm
@@ -384,7 +387,7 @@ class JourneySimulator:
 
         只取最近 6 轮历史，减少 token 消耗。
         """
-        recent = self._history[-6:]
+        recent = self._history[-self.MAX_HISTORY_FOR_CONDITION:]
         history_text = "\n".join(
             f"{'用户' if m['role'] == 'user' else 'Agent'}：{m['content']}"
             for m in recent
