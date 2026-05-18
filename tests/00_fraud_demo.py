@@ -66,7 +66,6 @@ from journey import (
     StateConfig,
     TransitionConfig,
 )
-from journey.models import JourneyConfig as _JC  # 仅用于类型注解
 
 # ---------------------------------------------------------------------------
 # 欺诈处理 Journey 配置（三层控制综合演示）
