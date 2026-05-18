@@ -1,6 +1,6 @@
 """
-tests/00_fraud_demo.py
-~~~~~~~~~~~~~~~~~~~~~
+tests/integration/demo_fraud.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 欺诈处理 Journey — 完整对话演示
 ================================
@@ -13,10 +13,10 @@ tests/00_fraud_demo.py
     2. 安装依赖：pip install -r requirements.txt
 
 运行方式：
-    python tests/00_fraud_demo.py
+    python tests/integration/demo_fraud.py
 
 或以 pytest 跳过模式运行（LLM 服务不可用时自动跳过）：
-    pytest tests/00_fraud_demo.py -v
+    pytest tests/integration/demo_fraud.py -v
 """
 
 from __future__ import annotations
@@ -27,28 +27,27 @@ import sys
 from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# 路径设置：使项目根目录和 third_party/ 均可被导入
+# 路径设置：使项目根目录可被导入
 # ---------------------------------------------------------------------------
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_THIRD_PARTY = os.path.join(_ROOT, "third_party")
-for _p in (_ROOT, _THIRD_PARTY):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-# 加载 third_party/.env
+# 加载 third_party/.env（LLM 配置来源）
 try:
     from dotenv import load_dotenv
+    _THIRD_PARTY = os.path.join(_ROOT, "third_party")
     load_dotenv(os.path.join(_THIRD_PARTY, ".env"))
 except ImportError:
     pass
 
 # ---------------------------------------------------------------------------
-# 依赖检查：LLM 客户端
+# 依赖检查：使用 journey.generator 提供的 LLMClient（不依赖 third_party/ 代码）
 # ---------------------------------------------------------------------------
 
 try:
-    from model_client.api.llm import LLMClient, LLMConfig
+    from journey.generator import LLMClient, LLMConfig
     _LLM_AVAILABLE = True
 except ImportError:
     _LLM_AVAILABLE = False

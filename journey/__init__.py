@@ -20,6 +20,7 @@ journey
         JourneyGenerator,         # LLM 驱动的配置自动生成器
         generate_journey_config,  # 一行代码生成配置（便捷函数）
         LLMConfig,                # 生成器的 LLM 连接配置
+        LLMClient,                # 基于 LiteLLM 的异步 LLM 客户端（可独立使用）
     )
 
 内部实现细节（``JourneyBuilder`` 等子模块）**不属于公开 API**，可能随版本变化。
@@ -35,7 +36,7 @@ from .models import (
 )
 from .dsl import JourneyDSL
 from .loader import load_journey, load_journey_dict
-from .generator import JourneyGenerator, LLMConfig, generate_journey_config
+from .generator import JourneyGenerator, LLMClient, LLMConfig, generate_journey_config
 
 __all__ = [
     # 工厂函数（主入口）
@@ -55,5 +56,6 @@ __all__ = [
     "JourneyGenerator",
     "generate_journey_config",
     "LLMConfig",
+    "LLMClient",
 ]
 

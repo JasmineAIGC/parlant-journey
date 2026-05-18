@@ -1,8 +1,9 @@
 """
-05_test_generator.py — journey.generator 单元测试
+tests/unit/test_generator.py — journey.generator 单元测试
 
-通过 mock AsyncOpenAI 客户端模拟 LLM 响应，无需真实 LLM 服务即可运行。
-覆盖：LLMConfig 构建、JSON 提取、序列化、JourneyGenerator 主流程、CLI 参数解析。
+通过 mock LiteLLM（litellm.acompletion）模拟 LLM 响应，无需真实 LLM 服务即可运行。
+覆盖：LLMConfig 构建（含 enable_thinking）、LiteLLM 工具函数、JSON 提取、
+      序列化、LLMClient、JourneyGenerator 主流程、CLI 参数解析。
 """
 
 from __future__ import annotations
@@ -15,9 +16,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from journey.generator import (
+    DEFAULT_MODEL,
     JourneyGenerator,
+    LLMClient,
     LLMConfig,
+    _build_thinking_extra_body,
     _extract_json,
+    _is_thinking_model,
+    _needs_openai_prefix,
     _serialize,
     generate_journey_config,
 )
@@ -28,7 +34,6 @@ from journey.models import JourneyConfig
 # 测试用 LLM 响应数据
 # ---------------------------------------------------------------------------
 
-# 标准的、LLM 正确输出 JSON 的场景
 _VALID_LLM_JSON = {
     "title": "贷款申请流程",
     "description": "引导用户完成贷款申请的全流程",
@@ -50,17 +55,62 @@ _VALID_LLM_JSON = {
 _VALID_LLM_RESPONSE = json.dumps(_VALID_LLM_JSON, ensure_ascii=False)
 
 
-def _mock_openai_client(response_text: str) -> MagicMock:
-    """构造一个模拟 AsyncOpenAI 客户端，使 chat.completions.create 返回指定文本。"""
+def _make_litellm_mock(response_text: str) -> MagicMock:
+    """构造一个模拟 litellm 模块，使 acompletion 返回指定文本。"""
     choice = MagicMock()
     choice.message.content = response_text
 
     completion = MagicMock()
     completion.choices = [choice]
 
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(return_value=completion)
-    return client
+    mock_litellm = MagicMock()
+    mock_litellm.acompletion = AsyncMock(return_value=completion)
+    return mock_litellm
+
+
+# ---------------------------------------------------------------------------
+# LiteLLM 工具函数
+# ---------------------------------------------------------------------------
+
+class TestIsThinkingModel:
+    def test_qwen3被识别为推理模型(self):
+        assert _is_thinking_model("Qwen3-7B") is True
+        assert _is_thinking_model("qwen3-14b-instruct") is True
+
+    def test_deepseek_r1被识别为推理模型(self):
+        assert _is_thinking_model("deepseek-r1-distill-7b") is True
+
+    def test_普通模型不是推理模型(self):
+        assert _is_thinking_model("Qwen2.5-7B-Instruct") is False
+        assert _is_thinking_model("gpt-4o") is False
+        assert _is_thinking_model("gpt-4o-mini") is False
+
+
+class TestNeedsOpenAIPrefix:
+    def test_无前缀模型需要加前缀(self):
+        assert _needs_openai_prefix("Qwen2.5-7B-Instruct") is True
+        assert _needs_openai_prefix("gpt-4o-mini") is True
+
+    def test_已有提供商前缀的模型不需要(self):
+        assert _needs_openai_prefix("openai/gpt-4o") is False
+        assert _needs_openai_prefix("anthropic/claude-3") is False
+        assert _needs_openai_prefix("deepseek/deepseek-chat") is False
+
+
+class TestBuildThinkingExtraBody:
+    def test_None时返回空字典(self):
+        assert _build_thinking_extra_body(None, None) == {}
+        assert _build_thinking_extra_body(None, "http://localhost") == {}
+
+    def test_有base_url时嵌套在chat_template_kwargs(self):
+        result = _build_thinking_extra_body(False, "http://vllm:8080/v1")
+        assert result == {
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}
+        }
+
+    def test_无base_url时放顶层(self):
+        result = _build_thinking_extra_body(True, None)
+        assert result == {"extra_body": {"enable_thinking": True}}
 
 
 # ---------------------------------------------------------------------------
@@ -68,39 +118,55 @@ def _mock_openai_client(response_text: str) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 class TestLLMConfig构建:
-    def test_直接构造(self):
-        cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini")
+    def test_直接构造最小参数(self):
+        cfg = LLMConfig(api_key="sk-test")
         assert cfg.api_key == "sk-test"
-        assert cfg.model == "gpt-4o-mini"
+        assert cfg.model == DEFAULT_MODEL
         assert cfg.base_url is None
         assert cfg.temperature == 0.0
+        assert cfg.enable_thinking is None
 
-    def test_完整参数(self):
+    def test_直接构造完整参数(self):
         cfg = LLMConfig(
             api_key="sk-xxx",
-            base_url="http://localhost:8000/v1",
             model="Qwen2.5-7B-Instruct",
+            base_url="http://localhost:8000/v1",
             temperature=0.1,
             max_tokens=2048,
+            enable_thinking=False,
         )
         assert cfg.base_url == "http://localhost:8000/v1"
         assert cfg.max_tokens == 2048
+        assert cfg.enable_thinking is False
 
-    def test_from_env读取环境变量(self, monkeypatch):
+    def test_from_env读取LLM前缀(self, monkeypatch):
         monkeypatch.setenv("LLM_API_KEY", "sk-from-env")
         monkeypatch.setenv("LLM_MODEL", "gpt-4o")
         monkeypatch.setenv("LLM_BASE_URL", "http://my-server/v1")
+        for k in ["QWEN3_API_KEY", "QWEN3_MODEL"]:
+            monkeypatch.delenv(k, raising=False)
 
-        cfg = LLMConfig.from_env()
+        with patch("journey.generator._load_dotenv"):
+            cfg = LLMConfig.from_env()
         assert cfg.api_key == "sk-from-env"
         assert cfg.model == "gpt-4o"
         assert cfg.base_url == "http://my-server/v1"
 
-    def test_from_env兼容QWEN3前缀(self, monkeypatch):
-        """验证兼容 third_party/.env 中的 QWEN3_* 命名。"""
+    def test_from_env_QWEN3优先于LLM(self, monkeypatch):
+        """QWEN3_* 优先级高于 LLM_*，与 third_party/.env 惯例一致。"""
         monkeypatch.setenv("QWEN3_API_KEY", "sk-qwen3")
         monkeypatch.setenv("QWEN3_MODEL", "Qwen3-7B")
-        # 清除 LLM_* 以确保 QWEN3_* 生效
+        monkeypatch.setenv("LLM_API_KEY", "sk-llm-fallback")
+        monkeypatch.setenv("LLM_MODEL", "gpt-4o-mini")
+
+        cfg = LLMConfig.from_env()
+        assert cfg.api_key == "sk-qwen3"
+        assert cfg.model == "Qwen3-7B"
+
+    def test_from_env兼容QWEN3前缀(self, monkeypatch):
+        """验证兼容 third_party/.env 中的 QWEN3_* 命名（无 LLM_*）。"""
+        monkeypatch.setenv("QWEN3_API_KEY", "sk-qwen3")
+        monkeypatch.setenv("QWEN3_MODEL", "Qwen3-7B")
         monkeypatch.delenv("LLM_API_KEY", raising=False)
         monkeypatch.delenv("LLM_MODEL", raising=False)
 
@@ -109,19 +175,107 @@ class TestLLMConfig构建:
         assert cfg.model == "Qwen3-7B"
 
     def test_from_env缺少API_KEY时抛出ValueError(self, monkeypatch):
-        # 清除所有已知 key 的环境变量
-        for key in ["LLM_API_KEY", "QWEN3_API_KEY", "OPENAI_API_KEY",
+        for key in ["QWEN3_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY",
                     "DEEPSEEK_API_KEY", "QWEN_API_KEY"]:
             monkeypatch.delenv(key, raising=False)
 
-        with pytest.raises(ValueError, match="API Key"):
-            LLMConfig.from_env()
+        with patch("journey.generator._load_dotenv"):
+            with pytest.raises(ValueError, match="API Key"):
+                LLMConfig.from_env()
 
     def test_from_env_temperature被正确解析(self, monkeypatch):
         monkeypatch.setenv("LLM_API_KEY", "sk-x")
         monkeypatch.setenv("LLM_TEMPERATURE", "0.3")
+        for k in ["QWEN3_API_KEY", "QWEN3_TEMPERATURE"]:
+            monkeypatch.delenv(k, raising=False)
         cfg = LLMConfig.from_env()
         assert cfg.temperature == pytest.approx(0.3)
+
+    def test_from_env_enable_thinking_false(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "sk-x")
+        monkeypatch.setenv("LLM_ENABLE_THINKING", "false")
+        for k in ["QWEN3_API_KEY"]:
+            monkeypatch.delenv(k, raising=False)
+        cfg = LLMConfig.from_env()
+        assert cfg.enable_thinking is False
+
+    def test_from_env_enable_thinking_true(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "sk-x")
+        monkeypatch.setenv("LLM_ENABLE_THINKING", "true")
+        for k in ["QWEN3_API_KEY"]:
+            monkeypatch.delenv(k, raising=False)
+        cfg = LLMConfig.from_env()
+        assert cfg.enable_thinking is True
+
+    def test_from_env_enable_thinking_未设置时为None(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "sk-x")
+        monkeypatch.delenv("LLM_ENABLE_THINKING", raising=False)
+        monkeypatch.delenv("ENABLE_THINKING", raising=False)
+        monkeypatch.delenv("QWEN3_API_KEY", raising=False)
+        cfg = LLMConfig.from_env()
+        assert cfg.enable_thinking is None
+
+
+# ---------------------------------------------------------------------------
+# LLMClient — 思考模式解析
+# ---------------------------------------------------------------------------
+
+class TestLLMClient思考模式:
+    def _make_client(self, model: str, enable_thinking=None) -> LLMClient:
+        cfg = LLMConfig(api_key="sk-test", model=model, enable_thinking=enable_thinking)
+        client = LLMClient.__new__(LLMClient)
+        client._config = cfg
+        client._litellm = MagicMock()
+        # 手动复制 __init__ 中的思考模式解析逻辑
+        from journey.generator import _is_thinking_model
+        resolved = enable_thinking
+        if resolved is None and _is_thinking_model(model):
+            resolved = False
+        client._resolved_thinking = resolved
+        return client
+
+    def test_qwen3模型自动禁用思考(self):
+        client = self._make_client("Qwen3-7B")
+        assert client._resolved_thinking is False
+
+    def test_普通模型thinking为None(self):
+        client = self._make_client("Qwen2.5-7B-Instruct")
+        assert client._resolved_thinking is None
+
+    def test_强制启用思考(self):
+        client = self._make_client("Qwen3-7B", enable_thinking=True)
+        assert client._resolved_thinking is True
+
+    @pytest.mark.asyncio
+    async def test_chat_async剥除think块(self):
+        cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini")
+        client = LLMClient.__new__(LLMClient)
+        client._config = cfg
+        client._resolved_thinking = None
+
+        raw = "<think>这是内部推理，不应出现在输出中</think>这是最终回复"
+        client._litellm = _make_litellm_mock(raw)
+
+        result = await client.chat_async([{"role": "user", "content": "你好"}])
+        assert result == "这是最终回复"
+        assert "<think>" not in result
+
+    @pytest.mark.asyncio
+    async def test_chat_async连接失败抛出RuntimeError(self):
+        cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini",
+                        base_url="http://localhost:9999/v1")
+        client = LLMClient.__new__(LLMClient)
+        client._config = cfg
+        client._resolved_thinking = None
+
+        mock_litellm = MagicMock()
+        mock_litellm.acompletion = AsyncMock(
+            side_effect=Exception("connection refused to localhost:9999")
+        )
+        client._litellm = mock_litellm
+
+        with pytest.raises(RuntimeError, match="LLM 服务"):
+            await client.chat_async([{"role": "user", "content": "测试"}])
 
 
 # ---------------------------------------------------------------------------
@@ -204,11 +358,14 @@ class TestSerialize:
 
 class TestJourneyGenerator:
     def _make_generator(self, response_text: str = _VALID_LLM_RESPONSE) -> JourneyGenerator:
-        """构造一个使用 mock 客户端的 JourneyGenerator。"""
+        """构造一个使用 mock LLMClient 的 JourneyGenerator。"""
         cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini")
         gen = JourneyGenerator.__new__(JourneyGenerator)
         gen._config = cfg
-        gen._client = _mock_openai_client(response_text)
+        # mock _llm：chat_async 直接返回 response_text（已是清洁文本）
+        mock_llm = MagicMock()
+        mock_llm.chat_async = AsyncMock(return_value=response_text)
+        gen._llm = mock_llm
         return gen
 
     @pytest.mark.asyncio
@@ -241,16 +398,18 @@ class TestJourneyGenerator:
 
     @pytest.mark.asyncio
     async def test_generate携带extra_instruction(self):
-        """extra_instruction 应被追加到 system prompt 中（通过 LLM 调用参数验证）。"""
+        """extra_instruction 应被追加到 system prompt 中（通过 chat_async 调用参数验证）。"""
         gen = self._make_generator()
         await gen.generate("流程", extra_instruction="状态不超过3个")
 
-        call_args = gen._client.chat.completions.create.call_args
-        system_msg = call_args.kwargs["messages"][0]["content"]
+        call_args = gen._llm.chat_async.call_args
+        # chat_async 的第一个位置参数是 messages 列表
+        messages = call_args.args[0]
+        system_msg = messages[0]["content"]
         assert "状态不超过3个" in system_msg
 
     @pytest.mark.asyncio
-    async def test_generate_to_file写入文件(self, tmp_path):
+    async def test_generate_to_file写入json文件(self, tmp_path):
         gen = self._make_generator()
         output = str(tmp_path / "out.json")
         config = await gen.generate_to_file("贷款申请流程", output)
@@ -289,29 +448,20 @@ class TestJourneyGenerator:
             await gen.generate("任意输入")
 
     @pytest.mark.asyncio
-    async def test_llm连接失败时抛出RuntimeError(self):
-        cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini")
-        gen = JourneyGenerator.__new__(JourneyGenerator)
-        gen._config = cfg
-        client = MagicMock()
-        client.chat.completions.create = AsyncMock(
-            side_effect=Exception("connection refused to localhost:9999")
+    async def test_llm连接失败时RuntimeError向上传递(self):
+        """LLMClient.chat_async 抛出 RuntimeError 应传递到 generate()。"""
+        gen = self._make_generator()
+        gen._llm.chat_async = AsyncMock(
+            side_effect=RuntimeError("无法连接到 LLM 服务（http://localhost:9999/v1）")
         )
-        gen._client = client
 
         with pytest.raises(RuntimeError, match="LLM 服务"):
             await gen.generate("任意输入")
 
     @pytest.mark.asyncio
     async def test_llm其他异常直接向上传递(self):
-        cfg = LLMConfig(api_key="sk-test", model="gpt-4o-mini")
-        gen = JourneyGenerator.__new__(JourneyGenerator)
-        gen._config = cfg
-        client = MagicMock()
-        client.chat.completions.create = AsyncMock(
-            side_effect=ValueError("模型不存在")
-        )
-        gen._client = client
+        gen = self._make_generator()
+        gen._llm.chat_async = AsyncMock(side_effect=ValueError("模型不存在"))
 
         with pytest.raises(ValueError, match="模型不存在"):
             await gen.generate("任意输入")

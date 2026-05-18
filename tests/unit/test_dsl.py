@@ -372,10 +372,10 @@ transitions:
         assert config.transitions[0].condition == "用户确认"
 
     def test_fraud_yaml示例文件可被正确加载(self):
-        """验证 tests/fraud.yaml 示例文件可被成功解析。"""
-        yaml_path = os.path.join(os.path.dirname(__file__), "fraud.yaml")
+        """验证 tests/fixtures/fraud.yaml 示例文件可被成功解析。"""
+        yaml_path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fraud.yaml")
         if not os.path.exists(yaml_path):
-            pytest.skip("tests/fraud.yaml 不存在，跳过")
+            pytest.skip("tests/fixtures/fraud.yaml 不存在，跳过")
 
         config = load_journey(yaml_path)
         assert config.title == "处理潜在欺诈交易"
@@ -390,10 +390,10 @@ transitions:
 
 class TestLoaderFraudJSON示例:
     def test_fraud_json与yaml内容等价(self):
-        """验证 tests/fraud.json 与 tests/fraud.yaml 解析结果等价。"""
-        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        """验证 tests/fixtures/fraud.json 与 tests/fixtures/fraud.yaml 解析结果等价。"""
+        json_path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fraud.json")
         if not os.path.exists(json_path):
-            pytest.skip("tests/fraud.json 不存在，跳过")
+            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
 
         config = load_journey(json_path)
         assert config.title == "处理潜在欺诈交易"
@@ -403,9 +403,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json状态名正确(self):
         """验证 fraud.json 中的状态名与 fraud.yaml 一致。"""
-        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        json_path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fraud.json")
         if not os.path.exists(json_path):
-            pytest.skip("tests/fraud.json 不存在，跳过")
+            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
 
         config = load_journey(json_path)
         state_names = [s.name for s in config.states]
@@ -416,9 +416,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json高风险状态有节点规则(self):
         """验证 fraud.json 中 high_risk 状态含有 2 条节点级规则。"""
-        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        json_path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fraud.json")
         if not os.path.exists(json_path):
-            pytest.skip("tests/fraud.json 不存在，跳过")
+            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
 
         config = load_journey(json_path)
         high_risk = next(s for s in config.states if s.name == "high_risk")
@@ -427,9 +427,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json预设话术正确解析(self):
         """验证 identity_verify 状态的 canned_response 被正确解析。"""
-        json_path = os.path.join(os.path.dirname(__file__), "fraud.json")
+        json_path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fraud.json")
         if not os.path.exists(json_path):
-            pytest.skip("tests/fraud.json 不存在，跳过")
+            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
 
         config = load_journey(json_path)
         verify = next(s for s in config.states if s.name == "identity_verify")
