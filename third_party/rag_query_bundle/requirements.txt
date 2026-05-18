@@ -1,0 +1,37 @@
+# rag_query_bundle 运行依赖
+# 与仓库根目录 requirements.txt 保持一致，供独立部署时直接使用
+
+# Parlant SDK（Server 模式 RAG 入口）
+parlant
+
+# LLM 客户端（基于 LiteLLM 调用本地 vLLM / OpenAI 兼容端点）
+litellm>=1.40.0
+
+# 环境变量加载（.env 文件）
+python-dotenv>=1.0.0
+
+# OpenAI SDK（OpenAILikeEmbedding / 环境连通性检测）
+openai>=1.0.0
+
+# HTTP 客户端（部分模型调用链路依赖）
+httpx>=0.27.0
+
+# LlamaIndex + FAISS（plan_a Embedding/VectorStore）
+llama-index>=0.11.0
+llama-index-vector-stores-faiss>=0.3.0
+
+# FAISS 向量库（CPU 版，GPU 环境可替换为 faiss-gpu）
+faiss-cpu>=1.8.0
+
+# ── 可选依赖 ────────────────────────────────────────────────────────────────
+
+# Parlant LiteLLM 适配器在导入时依赖 torch；如遇 "No module named 'torch'" 请安装：
+# pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# 本地 Sentence-Transformer Embedding（可选，不用则走 OpenAILikeEmbedding）：
+# sentence-transformers>=3.0.0
+
+# BM25 混合检索（可选）：
+# llama-index-retrievers-bm25>=0.4.0
+# rank_bm25>=0.2.2
+# jieba>=0.42.1
