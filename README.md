@@ -12,9 +12,61 @@ pip install parlant-journey
 ## 快速开始
 
 ```python
-from parlant_journey import create_journey, JourneyConfig, StateConfig, TransitionConfig
+import parlant.sdk as p
+from parlant_journey import (
+    create_journey,
+    JourneyConfig,
+    StateConfig,
+    TransitionConfig,
+    GuidelineConfig,
+    CannedResponseConfig,
+)
 
-journey = await create_journey(agent, config)
+async with p.Server(...) as server:
+    agent = await server.create_agent(...)
+
+    config = JourneyConfig(
+        title="欺诈处理",
+        triggers=["我卡被盗刷了", "可疑交易"],
+        description="处理欺诈交易的标准流程",
+        states=[
+            StateConfig(
+                name="verify",
+                chat_state="请验证您的身份",
+                canned_response=CannedResponseConfig(
+                    template="为了账户安全，请提供您的姓名和身份证后四位。",
+                    strict=True,
+                ),
+            ),
+            StateConfig(name="closing", chat_state="感谢您的配合"),
+        ],
+        transitions=[
+            TransitionConfig(source="verify", target="closing", condition="验证成功"),
+        ],
+        global_guidelines=[
+            GuidelineConfig(condition="用户情绪激动", action="先安抚情绪", priority=90),
+        ],
+    )
+
+    journey = await create_journey(agent, config)
 ```
 
-详见 `examples/fraud.py` 和 `ARCHITECTURE.md`。
+## 三层控制模型
+
+| 维度 | 配置字段 | 效果 |
+|------|---------|------|
+| 流程（路径） | `states` + `transitions` | 声明式 DAG，自动处理分支与汇聚 |
+| 行为（规则） | `guidelines`（节点级 + 全局） | 条件触发的行为约束 |
+| 话术（合规） | `canned_response`（节点级） | 关键节点锁定话术，零幻觉 |
+
+## 文档
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 完整技术方案（推荐阅读）
+- [examples/fraud.py](examples/fraud.py) — 欺诈处理完整示例
+
+## 测试
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
