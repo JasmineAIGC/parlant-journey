@@ -121,6 +121,41 @@ def _build_thinking_extra_body(
     return {"extra_body": {"enable_thinking": resolved_thinking}}
 
 
+def bridge_parlant_litellm_env() -> dict:
+    """将 .env 中的 LLM 配置（QWEN3_*/LLM_*/OPENAI_*）桥接到 Parlant LiteLLM 所需环境变量。
+
+    Parlant 使用 LiteLLM 作为 NLP 后端时读取 ``LITELLM_PROVIDER_*`` 环境变量。
+    本函数将现有 .env 中的 LLM 配置自动回填，优先保留用户已显式设置的 ``LITELLM_*`` 值。
+
+    Returns:
+        已解析并写入环境的 ``LITELLM_*`` 键值对。
+    """
+    _load_dotenv()
+    resolved: dict = {}
+
+    if base_url := os.environ.get("LITELLM_PROVIDER_BASE_URL") or _first_env([
+        "QWEN3_BASE_URL", "LLM_BASE_URL", "OPENAI_BASE_URL", "DEEPSEEK_BASE_URL", "QWEN_BASE_URL",
+    ]):
+        os.environ.setdefault("LITELLM_PROVIDER_BASE_URL", base_url)
+        resolved["LITELLM_PROVIDER_BASE_URL"] = os.environ["LITELLM_PROVIDER_BASE_URL"]
+
+    if api_key := os.environ.get("LITELLM_PROVIDER_API_KEY") or _first_env([
+        "QWEN3_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "QWEN_API_KEY",
+    ]):
+        os.environ.setdefault("LITELLM_PROVIDER_API_KEY", api_key)
+        resolved["LITELLM_PROVIDER_API_KEY"] = os.environ["LITELLM_PROVIDER_API_KEY"]
+
+    if model := os.environ.get("LITELLM_PROVIDER_MODEL_NAME") or _first_env([
+        "QWEN3_MODEL", "LLM_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL", "QWEN_MODEL",
+    ]):
+        if _needs_openai_prefix(model):
+            model = f"openai/{model}"
+        os.environ.setdefault("LITELLM_PROVIDER_MODEL_NAME", model)
+        resolved["LITELLM_PROVIDER_MODEL_NAME"] = os.environ["LITELLM_PROVIDER_MODEL_NAME"]
+
+    return resolved
+
+
 def _configure_litellm(model_name: str) -> None:
     """配置 LiteLLM 全局状态，抑制不必要的日志和警告。
 

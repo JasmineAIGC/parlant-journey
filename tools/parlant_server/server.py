@@ -73,8 +73,8 @@ class ParlantServerContext:
         nlp_service:   NLP 服务类型（默认 ``p.NLPServices.litellm``）。
                        传入 ``None`` 时使用 Parlant 默认值。
         bridge_env:    是否自动桥接 LiteLLM 所需的环境变量（默认 ``True``）。
-                       通过 ``model_client._utils.bridge_parlant_litellm_env`` 实现；
-                       若未安装 model_client，此选项被静默忽略。
+                       通过 ``tools.llm.client.bridge_parlant_litellm_env`` 实现，
+                       将 ``QWEN3_*``/``LLM_*``/``OPENAI_*`` 回填为 ``LITELLM_PROVIDER_*``。
 
     Raises:
         RuntimeError: 若未安装 ``parlant``（pip install parlant）。
@@ -105,10 +105,10 @@ class ParlantServerContext:
 
         if self._bridge_env:
             try:
-                from model_client._utils import bridge_parlant_litellm_env  # type: ignore[import]
+                from tools.llm.client import bridge_parlant_litellm_env
                 bridge_parlant_litellm_env()
             except ImportError:
-                pass  # model_client 未安装，静默忽略
+                pass
 
         nlp_service = self._nlp_service
         if nlp_service is None:

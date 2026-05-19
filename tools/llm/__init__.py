@@ -14,6 +14,7 @@ tools.llm
 from .client import (
     LLMClient,
     LLMConfig,
+    bridge_parlant_litellm_env,
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,
     DEFAULT_MAX_TOKENS,
@@ -22,6 +23,7 @@ from .client import (
 __all__ = [
     "LLMClient",
     "LLMConfig",
+    "bridge_parlant_litellm_env",
     "DEFAULT_MODEL",
     "DEFAULT_TEMPERATURE",
     "DEFAULT_MAX_TOKENS",
