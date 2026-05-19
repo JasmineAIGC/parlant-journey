@@ -19,10 +19,11 @@ journey
         load_journey_dict,        # 从字典对象加载配置
         JourneyGenerator,         # LLM 驱动的配置自动生成器
         generate_journey_config,  # 一行代码生成配置（便捷函数）
-        LLMConfig,                # 生成器的 LLM 连接配置
-        LLMClient,                # 基于 LiteLLM 的异步 LLM 客户端（可独立使用）
+        LLMConfig,                # LLM 连接配置（来源：tools.llm）
+        LLMClient,                # 基于 LiteLLM 的异步 LLM 客户端（来源：tools.llm）
     )
 
+LLMClient / LLMConfig 的规范来源是 ``tools.llm``，此处 re-export 保持向后兼容。
 内部实现细节（``JourneyBuilder`` 等子模块）**不属于公开 API**，可能随版本变化。
 """
 

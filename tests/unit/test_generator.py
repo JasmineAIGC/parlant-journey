@@ -4,6 +4,9 @@ tests/unit/test_generator.py — journey.generator 单元测试
 通过 mock LiteLLM（litellm.acompletion）模拟 LLM 响应，无需真实 LLM 服务即可运行。
 覆盖：LLMConfig 构建（含 enable_thinking）、LiteLLM 工具函数、JSON 提取、
       序列化、LLMClient、JourneyGenerator 主流程、CLI 参数解析。
+
+LLMClient / LLMConfig 的规范来源是 tools.llm.client，journey.generator 通过 re-export
+保持向后兼容。LLMConfig.from_env() 中的 _load_dotenv 补丁目标为 tools.llm.client 模块。
 """
 
 from __future__ import annotations
@@ -15,15 +18,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from journey.generator import (
+# LLMClient/LLMConfig/工具函数的规范来源
+from tools.llm.client import (
     DEFAULT_MODEL,
-    JourneyGenerator,
     LLMClient,
     LLMConfig,
     _build_thinking_extra_body,
-    _extract_json,
     _is_thinking_model,
     _needs_openai_prefix,
+)
+
+# journey-specific 函数
+from journey.generator import (
+    JourneyGenerator,
+    _extract_json,
     _serialize,
     generate_journey_config,
 )
@@ -146,7 +154,7 @@ class TestLLMConfig构建:
         for k in ["QWEN3_API_KEY", "QWEN3_MODEL"]:
             monkeypatch.delenv(k, raising=False)
 
-        with patch("journey.generator._load_dotenv"):
+        with patch("tools.llm.client._load_dotenv"):
             cfg = LLMConfig.from_env()
         assert cfg.api_key == "sk-from-env"
         assert cfg.model == "gpt-4o"
@@ -179,7 +187,7 @@ class TestLLMConfig构建:
                     "DEEPSEEK_API_KEY", "QWEN_API_KEY"]:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("journey.generator._load_dotenv"):
+        with patch("tools.llm.client._load_dotenv"):
             with pytest.raises(ValueError, match="API Key"):
                 LLMConfig.from_env()
 
@@ -227,7 +235,6 @@ class TestLLMClient思考模式:
         client._config = cfg
         client._litellm = MagicMock()
         # 手动复制 __init__ 中的思考模式解析逻辑
-        from journey.generator import _is_thinking_model
         resolved = enable_thinking
         if resolved is None and _is_thinking_model(model):
             resolved = False

@@ -29,4 +29,4 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["journey*"]
+include = ["journey*", "tools*"]

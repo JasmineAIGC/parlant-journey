@@ -47,7 +47,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 try:
-    from journey.generator import LLMClient, LLMConfig
+    from tools.llm import LLMClient, LLMConfig
     _LLM_AVAILABLE = True
 except ImportError:
     _LLM_AVAILABLE = False
