@@ -4,6 +4,29 @@
 纯数据测试，无需任何 mock 或外部依赖。
 """
 
+import os
+import sys
+import types
+
+# ---------------------------------------------------------------------------
+# 路径设置：支持 `python tests/01_test_models.py` 在任意目录下直接执行
+# ---------------------------------------------------------------------------
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+# parlant.sdk 桩（pytest 通过 conftest.py 注入，直接执行时在此处注入）
+if "parlant.sdk" not in sys.modules:
+    _parlant = types.ModuleType("parlant")
+    _sdk = types.ModuleType("parlant.sdk")
+    _sdk.CompositionMode = type("CompositionMode", (), {"STRICT": "STRICT", "FLUID": "FLUID"})
+    _sdk.Agent = object
+    _sdk.Journey = object
+    _sdk.Server = object
+    _parlant.sdk = _sdk
+    sys.modules.setdefault("parlant", _parlant)
+    sys.modules.setdefault("parlant.sdk", _sdk)
+
 import pytest
 from dataclasses import fields
 
