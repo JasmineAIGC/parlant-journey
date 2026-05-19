@@ -110,8 +110,8 @@ class Test创建Journey外壳:
 
         mock_agent.create_journey.assert_awaited_once_with(
             title="线性流程",
-            triggers=["go"],
             description="线性测试",
+            conditions=["go"],
         )
         assert builder._journey is mock_journey
 

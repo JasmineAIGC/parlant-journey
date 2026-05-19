@@ -72,8 +72,8 @@ class JourneyBuilder:
     async def _create_journey(self) -> None:
         self._journey = await self._agent.create_journey(
             title=self._config.title,
-            triggers=self._config.triggers,
             description=self._config.description,
+            conditions=self._config.triggers,
         )
 
     # ------------------------------------------------------------------
