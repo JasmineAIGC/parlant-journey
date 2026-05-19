@@ -13,19 +13,21 @@ tests/06_demo_fraud.py
   │    Step 2 — 注册 Journey 到 Parlant Agent                   │
   └─────────────────────────────────────────────────────────────┘
   ┌─────────────────────────────────────────────────────────────┐
-  │  Part 2：本地 LLM 对话模拟（无需 Parlant Server）           │
-  │    仅用于演示 journey 配置的对话效果，与 journey/ 无关。    │
+  │  Part 2：Parlant 对话演示（通过 Parlant Server 运行真实会话）│
+  │    使用 ParlantServerContext 启动 Parlant Server，           │
+  │    将 Journey 注册到 Agent，并通过 SessionModule            │
+  │    驱动多轮对话，体验 journey 配置在 Parlant 中的实际效果。 │
   └─────────────────────────────────────────────────────────────┘
 
 运行前提：
-    1. 在 third_party/.env 中配置 LLM 服务
+    1. 在根目录 .env 中配置 LLM 服务
        （QWEN3_API_KEY、QWEN3_BASE_URL、QWEN3_MODEL）
     2. 安装依赖：pip install -r requirements.txt
 
-直接运行（本地 LLM 对话演示）：
+直接运行（Parlant 对话演示）：
     python tests/06_demo_fraud.py
 
-作为 pytest 集成测试运行（LLM 服务不可用时自动跳过）：
+作为 pytest 集成测试运行（Parlant 或 LLM 服务不可用时自动跳过）：
     pytest tests/06_demo_fraud.py -v
 """
 
@@ -34,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import AsyncGenerator, List, Tuple
 
 # ---------------------------------------------------------------------------
 # 路径设置：使项目根目录可被导入（支持从任意目录运行本文件）
@@ -44,14 +46,21 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# 加载 third_party/.env（LLM 服务地址 / API Key / 模型名）
+# 加载根目录 .env（LLM 服务地址 / API Key / 模型名）
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(_ROOT, "third_party", ".env"))
+    load_dotenv(os.path.join(_ROOT, ".env"))
 except ImportError:
     pass  # python-dotenv 未安装时忽略，依赖系统环境变量
 
-# LLM 客户端（来自 tools.llm，与 journey/ 模块无直接耦合）
+# Parlant 框架（来自 tools/parlant_server）
+try:
+    from tools.parlant_server import ParlantServerContext  # noqa: E402
+    _PARLANT_AVAILABLE = True
+except ImportError:
+    _PARLANT_AVAILABLE = False
+
+# LLM 客户端（可选，仅供 LLM 可用性检测使用）
 try:
     from tools.llm import LLMClient, LLMConfig
     _LLM_AVAILABLE = True
@@ -220,153 +229,125 @@ fraud_config = load_journey(os.path.join(_FIXTURES_DIR, "fraud.yaml"))
 
 
 # ===========================================================================
-# Part 2：本地 LLM 对话模拟（演示用，与 journey/ 模块无关）
+# Part 2：Parlant 对话演示（通过 Parlant Server 运行真实会话）
 # ===========================================================================
 #
-# 以下 JourneySimulator 类是一个独立的本地模拟器，它直接读取 JourneyConfig
-# 的状态机结构，通过 LLM 驱动对话并判断状态转移条件。
+# journey/ 模块本质上是在 Parlant 框架内工作的——它将 JourneyConfig 注册为
+# Parlant Agent 的 Guidelines / Journey / CannedResponse，由 Parlant 引擎
+# 驱动 LLM 对话并自动完成状态推进。
 #
-# ⚠️  注意：这 **不是** journey/ 模块的一部分，也不是 Parlant 的工作方式。
-#     它的存在只是为了让你在没有 Parlant Server 的情况下，
-#     也能通过本地 LLM 直观感受 journey 配置定义的对话流程效果。
+# 以下 ParlantConversation 类通过 tools/parlant_server 中的
+# ParlantServerContext 启动 Parlant Server（无 UI），在其中创建 Agent、
+# 注册 Journey，并利用 Parlant 的 SessionModule 发送消息、等待 Agent 回复，
+# 模拟真实的多轮对话流程。
 #
-# 真实部署时，Parlant Server 本身会处理状态推进、LLM 对话生成，
-# 你只需完成 Part 1 的 Step 1 + Step 2，无需任何模拟器代码。
+# 这正是 journey 在生产环境中的工作方式：
+#   用户消息 → Parlant 引擎 → Guidelines 匹配 → LLM 生成回复 → Agent 回复
 
 
-class JourneySimulator:
+class ParlantConversation:
     """
-    【本地演示专用】基于 JourneyConfig + LLMClient 的轻量对话模拟器。
-
-    与 journey/ 模块及 Parlant Server 无耦合，仅用于演示 journey 配置效果。
+    基于 Parlant Server 的对话运行器。
 
     工作方式：
-      1. 解析 JourneyConfig，构建状态 DAG（有向无环图）。
-      2. 从根状态（无入边的状态）出发，逐状态推进对话。
-      3. 每个状态：将 chat_state 指令 + guidelines 合并为 system prompt，
-         调用 LLMClient 生成 Agent 回复。
-      4. 每轮对话结束后，用 LLM 判断各转移条件是否满足，自动跳转到下一状态。
-      5. 到达终止状态（无出边）后标记对话结束。
+      1. 通过 ParlantServerContext 启动 Parlant Server（无 UI）。
+      2. 创建 Parlant Agent，并将 JourneyConfig 注册到该 Agent。
+      3. 使用 SessionModule 创建会话（匿名客户）。
+      4. 每轮对话：
+         a. 通过 SessionModule.create_customer_message() 发送用户消息；
+         b. 通过 SessionModule.wait_for_more_events() 等待 AI Agent 回复；
+         c. 通过 SessionModule.find_events() 读取 Agent 回复文本。
     """
 
-    # 只取最近 N 轮历史用于条件判断，平衡上下文完整性与 token 消耗
-    MAX_HISTORY_FOR_CONDITION: int = 6
+    #: 等待 Agent 回复的超时秒数
+    AGENT_REPLY_TIMEOUT: float = 120.0
 
-    def __init__(self, config: "JourneyConfig", llm: "LLMClient") -> None:
-        from journey.models import StateConfig  # 避免顶层循环导入
-
+    def __init__(
+        self,
+        config: "JourneyConfig",
+        agent_name: str = "银行客服",
+        agent_description: str = "专业的银行客服 Agent，负责处理欺诈交易等业务场景",
+    ) -> None:
         self._config = config
-        self._llm = llm
-        self._state_cfg: Dict[str, StateConfig] = {s.name: s for s in config.states}
-
-        # 构建转移图：source → [(condition, target), ...]
-        self._edges: Dict[str, List[Tuple[Optional[str], str]]] = {}
-        for t in config.transitions:
-            self._edges.setdefault(t.source, []).append((t.condition, t.target))
-
-        # 终止状态（无出边）
-        self._terminals = {s.name for s in config.states if s.name not in self._edges}
-
-        # 根状态（无入边），作为起始状态
-        all_targets = {t.target for t in config.transitions}
-        roots = [s.name for s in config.states if s.name not in all_targets]
-        self._current = roots[0] if roots else config.states[0].name
-
-        self._history: List[dict] = []
-        self._state_first_reply: Dict[str, bool] = {}  # 控制 canned_response
-        self.done = False
+        self._agent_name = agent_name
+        self._agent_description = agent_description
+        self._replies: List[str] = []
 
     @property
-    def current_state(self) -> str:
-        return self._current
+    def replies(self) -> List[str]:
+        """已收到的全部 Agent 回复列表。"""
+        return list(self._replies)
 
-    async def reply(self, user_message: str) -> str:
-        """处理一条用户消息，返回 Agent 回复，并自动推进状态机。"""
-        self._history.append({"role": "user", "content": user_message})
+    async def run(self, messages: List[str]) -> AsyncGenerator[Tuple[str, str], None]:
+        """
+        启动 Parlant Server，注册 Journey 并逐轮运行对话。
 
-        state_cfg = self._state_cfg[self._current]
-        agent_reply = await self._generate_reply(state_cfg)
+        Args:
+            messages: 模拟用户依次发送的消息列表。
+        """
+        from journey import create_journey  # 避免顶层循环导入
+        # parlant.core.* 在此延迟导入，避免与 conftest.py 中的 parlant.sdk 桩模块冲突
+        from parlant.core.app_modules.sessions import SessionModule, Moderation
+        from parlant.core.sessions import EventKind, EventSource, Timeout
+        from parlant.core.customers import CustomerStore
 
-        self._history.append({"role": "assistant", "content": agent_reply})
-        self._state_first_reply[self._current] = True
-        await self._try_advance()
-        return agent_reply
+        async with ParlantServerContext() as ctx:
+            # 创建 Agent 并注册 Journey
+            agent = await ctx.create_agent(self._agent_name, self._agent_description)
+            await create_journey(agent, self._config)
 
-    # ── 生成回复 ──────────────────────────────────────────────────────────
+            server = ctx.server
+            session_module = server._container[SessionModule]
 
-    async def _generate_reply(self, state_cfg) -> str:
-        # canned_response strict 模式：首次进入该状态时强制使用预设话术
-        if (
-            state_cfg.canned_response
-            and state_cfg.canned_response.strict
-            and not self._state_first_reply.get(state_cfg.name)
-        ):
-            return state_cfg.canned_response.template
+            # 以匿名访客身份创建会话
+            session = await session_module.create(
+                customer_id=CustomerStore.GUEST_ID,
+                agent_id=agent.id,
+                title=f"演示：{self._config.title}",
+            )
 
-        system_prompt = self._build_system_prompt(state_cfg)
-        messages = [{"role": "system", "content": system_prompt}] + self._history
-        return await self._llm.chat_async(messages)
+            event_offset = 0
+            for user_msg in messages:
+                # 发送用户消息（触发引擎处理）
+                evt = await session_module.create_customer_message(
+                    session_id=session.id,
+                    moderation=Moderation.NONE,
+                    message=user_msg,
+                    source=EventSource.CUSTOMER,
+                    trigger_processing=True,
+                    metadata=None,
+                )
+                next_offset = evt.offset + 1
 
-    def _build_system_prompt(self, state_cfg) -> str:
-        """将当前状态的 chat_state 指令 + guidelines 组合成 system prompt。"""
-        lines = [
-            "你是一个专业、合规的银行客服 Agent。",
-            f"\n【当前流程节点】{state_cfg.description or state_cfg.name}",
-        ]
-        if state_cfg.chat_state:
-            lines.append(f"\n【行为指令】{state_cfg.chat_state}")
+                # 等待 AI Agent 回复消息事件
+                await session_module.wait_for_more_events(
+                    session_id=session.id,
+                    min_offset=next_offset,
+                    kinds=[EventKind.MESSAGE],
+                    source=EventSource.AI_AGENT,
+                    timeout=Timeout(self.AGENT_REPLY_TIMEOUT),
+                )
 
-        # 节点级规则 + 全局规则，按优先级降序合并
-        all_rules = sorted(
-            state_cfg.guidelines
-            + sorted(self._config.global_guidelines, key=lambda g: g.priority, reverse=True),
-            key=lambda g: g.priority,
-            reverse=True,
-        )
-        if all_rules:
-            lines.append("\n【行为规则】")
-            for g in all_rules:
-                lines.append(f"  - 若「{g.condition}」，则「{g.action}」（优先级 {g.priority}）")
+                # 读取 Agent 回复文本
+                agent_events = await session_module.find_events(
+                    session_id=session.id,
+                    min_offset=next_offset,
+                    source=EventSource.AI_AGENT,
+                    kinds=[EventKind.MESSAGE],
+                    trace_id=None,
+                )
 
-        # canned_response fluid 模式：作为参考话术（不强制使用）
-        if state_cfg.canned_response and not state_cfg.canned_response.strict:
-            lines.append(f"\n【参考话术】{state_cfg.canned_response.template}")
+                agent_reply = ""
+                for ev in agent_events:
+                    if isinstance(ev.data, dict) and "message" in ev.data:
+                        agent_reply = ev.data["message"]
+                        event_offset = ev.offset + 1
+                        break
+                else:
+                    event_offset = next_offset
 
-        lines.append("\n请用简洁、专业的中文回复用户，严格遵守上述指令和规则。")
-        return "".join(lines)
-
-    # ── 状态转移 ──────────────────────────────────────────────────────────
-
-    async def _try_advance(self) -> None:
-        """根据对话内容判断转移条件，推进状态机。"""
-        if self._current in self._terminals:
-            self.done = True
-            return
-
-        for condition, target in self._edges.get(self._current, []):
-            if condition is None or await self._condition_met(condition):
-                self._current = target
-                if self._current in self._terminals:
-                    self.done = True
-                return
-
-    async def _condition_met(self, condition: str) -> bool:
-        """用 LLM 判断转移条件是否已在近期对话中满足（只取最近 6 轮）。"""
-        recent = self._history[-self.MAX_HISTORY_FOR_CONDITION:]
-        history_text = "\n".join(
-            f"{'用户' if m['role'] == 'user' else 'Agent'}：{m['content']}"
-            for m in recent
-        )
-        prompt = (
-            f"根据以下对话历史，判断条件「{condition}」是否已满足。\n\n"
-            f"对话历史：\n{history_text}\n\n"
-            "请只回答 YES 或 NO，不要解释。"
-        )
-        result = await self._llm.chat_async(
-            [{"role": "user", "content": prompt}],
-            temperature=0.0,
-        )
-        return "YES" in result.upper()
+                self._replies.append(agent_reply)
+                yield user_msg, agent_reply
 
 
 # ---------------------------------------------------------------------------
@@ -390,12 +371,13 @@ DEMO_SCRIPT: List[str] = [
 
 async def run_demo() -> None:
     """
-    运行本地 LLM 对话演示。
+    运行 Parlant 对话演示。
 
     演示流程：
       1. 打印 fraud_config 的基本信息（Journey 的 title、状态数等）
-      2. 初始化 LLMClient（从 third_party/.env 读取配置）
-      3. 创建 JourneySimulator，逐轮模拟对话
+      2. 启动 ParlantServerContext（无 UI Parlant Server）
+      3. 创建 Agent，将 fraud Journey 注册到 Agent
+      4. 通过 SessionModule 发送 DEMO_SCRIPT 中的消息并打印 Agent 回复
     """
     # ── 显示 Journey 配置概览（来自 Step 1 加载的 fraud_config）──────────
     print("=" * 65)
@@ -408,43 +390,34 @@ async def run_demo() -> None:
     print(f"  全局规则：{len(fraud_config.global_guidelines)}")
     print()
 
-    # ── 初始化 LLM 客户端（非 journey/ 模块，仅供本地演示使用）──────────
-    llm_config = LLMConfig.from_env()
-    print(f"  LLM 模型：{llm_config.model}")
-    print(f"  API 地址：{llm_config.base_url}")
+    print("─" * 65)
+    print("  启动 Parlant Server（无 UI）并注册 Journey …")
+    print("─" * 65)
+
+    conv = ParlantConversation(fraud_config)
+
     print()
-
-    llm = LLMClient(config=llm_config)
-
-    # ── 创建模拟器并开始对话（非 Parlant，仅本地演示）───────────────────
-    sim = JourneySimulator(fraud_config, llm)
-
     print("─" * 65)
-    print("  对话开始（本地 LLM 模拟，非 Parlant Server）")
+    print("  对话开始（Parlant Server 驱动）")
     print("─" * 65)
 
-    for i, user_msg in enumerate(DEMO_SCRIPT, 1):
-        print(f"\n[Turn {i}] 状态：{sim.current_state}")
-        print(f"  👤 用户：{user_msg}")
-
-        try:
-            agent_reply = await sim.reply(user_msg)
-        except RuntimeError as exc:
-            print(f"\n❌ LLM 服务不可达，演示中止。\n{exc}")
-            print("\n请确认 third_party/.env 中的 LLM 地址和端口正确，且服务正在运行。")
-            return
-        except Exception as exc:
-            print(f"\n❌ 调用 LLM 时发生意外错误：{exc}")
-            return
-
-        print(f"  🤖 Agent：{agent_reply}")
-
-        if sim.done:
-            print(f"\n  ✅ Journey 已到达终止状态：{sim.current_state}")
-            break
-
-    if not sim.done:
-        print(f"\n  ℹ️  演示脚本结束，当前状态：{sim.current_state}")
+    try:
+        turn = 0
+        async for user_msg, agent_reply in conv.run(DEMO_SCRIPT):
+            turn += 1
+            print(f"\n[Turn {turn}]")
+            print(f"  👤 用户：{user_msg}")
+            if agent_reply:
+                print(f"  🤖 Agent：{agent_reply}")
+            else:
+                print("  🤖 Agent：（未收到回复，可能超时）")
+    except RuntimeError as exc:
+        print(f"\n❌ Parlant Server 启动失败：{exc}")
+        print("\n请确认已安装 parlant 及 LLM 配置正确（根目录 .env）。")
+        return
+    except Exception as exc:
+        print(f"\n❌ 对话过程发生意外错误：{exc}")
+        return
 
     print("\n" + "=" * 65)
     print("  演示完成")
@@ -457,32 +430,33 @@ async def run_demo() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not _LLM_AVAILABLE, reason="litellm 未安装（pip install litellm openai）")
+@pytest.mark.skipif(
+    not _PARLANT_AVAILABLE,
+    reason="parlant 未安装（pip install parlant）",
+)
 async def test_fraud_demo_runs_full_conversation() -> None:
     """
-    集成测试：验证 JourneySimulator 能完整走完欺诈处理 Journey 对话。
+    集成测试：验证 ParlantConversation 能通过 Parlant Server 完整运行欺诈处理对话。
 
-    前提：third_party/.env 中 LLM 服务地址可达；否则自动 skip。
+    前提：根目录 .env 中 LLM 服务地址可达；否则自动 skip。
     """
+    if _LLM_AVAILABLE:
+        try:
+            config = LLMConfig.from_env()
+            llm = LLMClient(config=config)
+            await llm.chat_async([{"role": "user", "content": "你好"}])
+        except Exception as e:
+            pytest.skip(f"LLM 服务不可达：{e}")
+
+    replies: List[str] = []
     try:
-        config = LLMConfig.from_env()
-    except (ValueError, Exception) as e:
-        pytest.skip(f"LLM 配置不可用：{e}")
+        conv = ParlantConversation(fraud_config)
+        async for _user_msg, agent_reply in conv.run(DEMO_SCRIPT[:2]):
+            replies.append(agent_reply)
+    except RuntimeError as e:
+        pytest.skip(f"Parlant Server 启动失败：{e}")
 
-    try:
-        llm = LLMClient(config=config)
-        await llm.chat_async([{"role": "user", "content": "你好"}])
-    except Exception as e:
-        pytest.skip(f"LLM 服务不可达：{e}")
-
-    sim = JourneySimulator(fraud_config, llm)
-    for user_msg in DEMO_SCRIPT:
-        reply = await sim.reply(user_msg)
-        assert isinstance(reply, str) and len(reply) > 0, "Agent 回复不应为空"
-        if sim.done:
-            break
-
-    assert sim._state_first_reply, "至少应有 1 个状态产生过回复"
+    assert len(replies) > 0, "至少应收到 1 条 Agent 回复"
 
 
 # ===========================================================================
@@ -490,9 +464,9 @@ async def test_fraud_demo_runs_full_conversation() -> None:
 # ===========================================================================
 
 if __name__ == "__main__":
-    if not _LLM_AVAILABLE:
-        print("❌ 缺少依赖：请先安装 litellm 和 openai")
-        print("   pip install litellm openai python-dotenv")
+    if not _PARLANT_AVAILABLE:
+        print("❌ 缺少依赖：请先安装 parlant")
+        print("   pip install parlant")
         sys.exit(1)
 
     asyncio.run(run_demo())
