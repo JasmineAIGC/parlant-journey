@@ -122,10 +122,20 @@ def _build_thinking_extra_body(
 
 
 def bridge_parlant_litellm_env() -> dict:
-    """将 .env 中的 LLM 配置（QWEN3_*/LLM_*/OPENAI_*）桥接到 Parlant LiteLLM 所需环境变量。
+    """将 .env 中的 LLM/Embedding 配置桥接到 Parlant LiteLLM 所需环境变量。
 
-    Parlant 使用 LiteLLM 作为 NLP 后端时读取 ``LITELLM_PROVIDER_*`` 环境变量。
-    本函数将现有 .env 中的 LLM 配置自动回填，优先保留用户已显式设置的 ``LITELLM_*`` 值。
+    Parlant 使用 LiteLLM 作为 NLP 后端时读取以下环境变量：
+
+    - ``LITELLM_PROVIDER_BASE_URL``  — LLM 服务地址
+    - ``LITELLM_PROVIDER_API_KEY``   — LLM API Key
+    - ``LITELLM_PROVIDER_MODEL_NAME`` — LLM 模型名称
+    - ``LITELLM_EMBEDDING_MODEL_NAME`` — Embedding 模型名称；
+      **未设置时 Parlant 默认使用 jinaai/jina-embeddings-v2-base-en（需从
+      HuggingFace 下载）**，内网环境下必须通过此变量指定自定义 Embedding 模型。
+    - ``LITELLM_EMBEDDING_DIMENSIONS`` — Embedding 向量维度（默认 1536）
+
+    本函数将现有 .env 中的 LLM/Embedding 配置自动回填，
+    优先保留用户已显式设置的 ``LITELLM_*`` 值。
 
     Returns:
         已解析并写入环境的 ``LITELLM_*`` 键值对。
@@ -152,6 +162,24 @@ def bridge_parlant_litellm_env() -> dict:
             model = f"openai/{model}"
         os.environ.setdefault("LITELLM_PROVIDER_MODEL_NAME", model)
         resolved["LITELLM_PROVIDER_MODEL_NAME"] = os.environ["LITELLM_PROVIDER_MODEL_NAME"]
+
+    # Embedding 模型：若未设置 LITELLM_EMBEDDING_MODEL_NAME，Parlant 默认使用
+    # jinaai/jina-embeddings-v2-base-en（需从 HuggingFace 下载）。
+    # 内网/离线环境下必须通过 EMBEDDING_MODEL 指定自定义 Embedding 模型。
+    if emb_model := os.environ.get("LITELLM_EMBEDDING_MODEL_NAME") or _first_env([
+        "EMBEDDING_MODEL", "QWEN3_EMBEDDING_MODEL", "LLM_EMBEDDING_MODEL",
+    ]):
+        if _needs_openai_prefix(emb_model):
+            emb_model = f"openai/{emb_model}"
+        os.environ.setdefault("LITELLM_EMBEDDING_MODEL_NAME", emb_model)
+        resolved["LITELLM_EMBEDDING_MODEL_NAME"] = os.environ["LITELLM_EMBEDDING_MODEL_NAME"]
+
+    # Embedding 向量维度（Parlant 默认 1536，按实际模型设置）
+    if emb_dims := os.environ.get("LITELLM_EMBEDDING_DIMENSIONS") or _first_env([
+        "EMBEDDING_DIMENSIONS", "QWEN3_EMBEDDING_DIMENSIONS", "LLM_EMBEDDING_DIMENSIONS",
+    ]):
+        os.environ.setdefault("LITELLM_EMBEDDING_DIMENSIONS", emb_dims)
+        resolved["LITELLM_EMBEDDING_DIMENSIONS"] = os.environ["LITELLM_EMBEDDING_DIMENSIONS"]
 
     return resolved
 
