@@ -37,6 +37,9 @@ from journey.generator import (
 )
 from journey.models import JourneyConfig
 
+# 补丁目标：LLMConfig.from_env() 内部调用的 _load_dotenv 所在模块
+_LOAD_DOTENV_PATCH = "tools.llm.client._load_dotenv"
+
 
 # ---------------------------------------------------------------------------
 # 测试用 LLM 响应数据
@@ -154,7 +157,7 @@ class TestLLMConfig构建:
         for k in ["QWEN3_API_KEY", "QWEN3_MODEL"]:
             monkeypatch.delenv(k, raising=False)
 
-        with patch("tools.llm.client._load_dotenv"):
+        with patch(_LOAD_DOTENV_PATCH):
             cfg = LLMConfig.from_env()
         assert cfg.api_key == "sk-from-env"
         assert cfg.model == "gpt-4o"
@@ -187,7 +190,7 @@ class TestLLMConfig构建:
                     "DEEPSEEK_API_KEY", "QWEN_API_KEY"]:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("tools.llm.client._load_dotenv"):
+        with patch(_LOAD_DOTENV_PATCH):
             with pytest.raises(ValueError, match="API Key"):
                 LLMConfig.from_env()
 
