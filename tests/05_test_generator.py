@@ -576,3 +576,11 @@ class TestCLI参数解析:
         parser = _build_arg_parser()
         args = parser.parse_args(["desc", "--model", "gpt-4o"])
         assert args.model == "gpt-4o"
+
+
+# ---------------------------------------------------------------------------
+# 直接运行支持：python tests/05_test_generator.py
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

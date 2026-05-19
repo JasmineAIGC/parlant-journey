@@ -141,3 +141,12 @@ class TestRegisterJourneys:
 
         assert titles_seen == [f"J{i}" for i in range(5)]
 
+
+# ---------------------------------------------------------------------------
+# 直接运行支持：python tests/03_test_factory.py
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])
+

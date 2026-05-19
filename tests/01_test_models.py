@@ -168,3 +168,12 @@ class TestJourneyConfig:
         assert len(cfg.states) == 3
         assert len(cfg.transitions) == 2
 
+
+# ---------------------------------------------------------------------------
+# 直接运行支持：python tests/01_test_models.py
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])
+

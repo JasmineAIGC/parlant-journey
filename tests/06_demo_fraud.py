@@ -287,7 +287,16 @@ async def run_demo() -> None:
         print(f"\n[Turn {i}] 状态：{sim.current_state}")
         print(f"  👤 用户：{user_msg}")
 
-        agent_reply = await sim.reply(user_msg)
+        try:
+            agent_reply = await sim.reply(user_msg)
+        except RuntimeError as exc:
+            print(f"\n❌ LLM 服务不可达，演示中止。\n{exc}")
+            print("\n请确认 third_party/.env 中的 LLM 地址和端口正确，且服务正在运行。")
+            return
+        except Exception as exc:
+            print(f"\n❌ 调用 LLM 时发生意外错误：{exc}")
+            return
+
         print(f"  🤖 Agent：{agent_reply}")
 
         if sim.done:

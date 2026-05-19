@@ -461,3 +461,12 @@ class TestLoaderFraudJSON示例:
         assert verify.canned_response.strict is True
         assert "身份" in verify.canned_response.template
 
+
+# ---------------------------------------------------------------------------
+# 直接运行支持：python tests/04_test_dsl.py
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])
+

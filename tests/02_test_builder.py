@@ -425,3 +425,11 @@ class TestBuild整体流程:
         with pytest.raises(ValueError, match="B"):
             await builder._build_dag()
 
+
+# ---------------------------------------------------------------------------
+# 直接运行支持：python tests/02_test_builder.py
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+
