@@ -1,6 +1,6 @@
 """
-tests/integration/01_demo_fraud.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/06_demo_fraud.py
+~~~~~~~~~~~~~~~~~~~~~~~
 
 欺诈处理 Journey — 完整对话演示
 ================================
@@ -8,15 +8,17 @@ tests/integration/01_demo_fraud.py
 演示 journey 框架的三层控制（流程 + 行为 + 话术），并通过 LLMClient 驱动一次
 完整的模拟对话，无需启动 Parlant Server。
 
+Journey 配置从 tests/fixtures/fraud.yaml 加载，无需在 Python 中重复维护配置。
+
 运行前提：
     1. 在 third_party/.env 中配置 LLM 服务（QWEN3_API_KEY、QWEN3_BASE_URL、QWEN3_MODEL）
     2. 安装依赖：pip install -r requirements.txt
 
 运行方式：
-    python tests/integration/01_demo_fraud.py
+    python tests/06_demo_fraud.py
 
 或以 pytest 跳过模式运行（LLM 服务不可用时自动跳过）：
-    pytest tests/integration/01_demo_fraud.py -v
+    pytest tests/06_demo_fraud.py -v
 """
 
 from __future__ import annotations
@@ -30,20 +32,19 @@ from typing import Dict, List, Optional, Tuple
 # 路径设置：使项目根目录可被导入
 # ---------------------------------------------------------------------------
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 # 加载 third_party/.env（LLM 配置来源）
 try:
     from dotenv import load_dotenv
-    _THIRD_PARTY = os.path.join(_ROOT, "third_party")
-    load_dotenv(os.path.join(_THIRD_PARTY, ".env"))
+    load_dotenv(os.path.join(_ROOT, "third_party", ".env"))
 except ImportError:
     pass
 
 # ---------------------------------------------------------------------------
-# 依赖检查：使用 journey.generator 提供的 LLMClient（不依赖 third_party/ 代码）
+# 依赖检查：使用 tools.llm 提供的 LLMClient（不依赖 third_party/ 代码）
 # ---------------------------------------------------------------------------
 
 try:
@@ -58,165 +59,15 @@ import pytest
 # Journey 框架导入
 # ---------------------------------------------------------------------------
 
-from journey import (
-    CannedResponseConfig,
-    GuidelineConfig,
-    JourneyConfig,
-    StateConfig,
-    TransitionConfig,
-)
+from journey import load_journey
+from journey.models import JourneyConfig, StateConfig
 
 # ---------------------------------------------------------------------------
-# 欺诈处理 Journey 配置（三层控制综合演示）
+# 欺诈处理 Journey 配置（从 fixtures/fraud.yaml 加载）
 # ---------------------------------------------------------------------------
 
-fraud_config = JourneyConfig(
-    title="处理潜在欺诈交易",
-    triggers=[
-        "我卡被盗刷了",
-        "可疑交易",
-        "账户异常",
-        "系统发出欺诈预警",
-        "怀疑被骗",
-    ],
-    description=(
-        "引导客户完成欺诈交易的核实与处置，覆盖：身份验证、信息采集、"
-        "风险评估和针对性处置，确保流程合规、可审计。"
-    ),
-    states=[
-        # ── 1. 身份验证 ──────────────────────────────────────────────────
-        StateConfig(
-            name="identity_verify",
-            description="完成用户身份验证（KYC）",
-            chat_state=(
-                "严格进行身份验证，要求用户提供姓名、身份证后四位或银行卡后四位。"
-                "验证失败时给予明确提示，最多允许 3 次重试。"
-            ),
-            canned_response=CannedResponseConfig(
-                template=(
-                    "为了您的账户安全，我需要先验证您的身份。"
-                    "请提供您的姓名、身份证后四位或银行卡后四位。"
-                ),
-                strict=True,
-            ),
-        ),
-        # ── 2. 信息采集 ──────────────────────────────────────────────────
-        StateConfig(
-            name="collect_info",
-            description="收集可疑交易的关键信息",
-            chat_state=(
-                "引导用户详细描述可疑交易：发生时间、金额、商户名称、是否本人操作。"
-                "记录所有细节，为后续风险评估做准备。"
-            ),
-        ),
-        # ── 3. 风险评估（模拟工具调用） ──────────────────────────────────
-        StateConfig(
-            name="risk_assess",
-            description="评估交易风险等级",
-            chat_state=(
-                "根据已收集的交易信息评估风险等级。"
-                "在实际系统中此状态会调用风险评估工具；"
-                "演示模式下请告知用户正在评估，并给出风险评级（HIGH / MEDIUM / LOW）。"
-            ),
-        ),
-        # ── 4a. 高风险处置 ────────────────────────────────────────────────
-        StateConfig(
-            name="high_risk",
-            description="执行高风险处置措施",
-            chat_state=(
-                "告知客户当前风险极高，立即引导：1) 冻结账户；"
-                "2) 申请挂失银行卡；3) 拨打紧急客服热线。"
-            ),
-            guidelines=[
-                GuidelineConfig(
-                    condition="处于 high_risk 状态",
-                    action="必须强调立即操作的紧迫性，并提供具体操作步骤",
-                    priority=95,
-                ),
-                GuidelineConfig(
-                    condition="用户犹豫不冻结账户",
-                    action="再次强调风险，说明延迟操作的潜在损失",
-                    priority=85,
-                ),
-            ],
-        ),
-        # ── 4b. 中风险处置 ────────────────────────────────────────────────
-        StateConfig(
-            name="medium_risk",
-            description="执行中风险处置措施",
-            chat_state=(
-                "建议用户：1) 修改账户密码；2) 设置单日交易限额；"
-                "3) 提交异议申诉，银行将在 3 个工作日内处理。"
-            ),
-        ),
-        # ── 4c. 低风险处置 ────────────────────────────────────────────────
-        StateConfig(
-            name="low_risk",
-            description="执行低风险处置措施",
-            chat_state=(
-                "告知用户当前交易风险较低，未发现明确欺诈迹象。"
-                "建议保持警惕，避免点击陌生链接或向陌生人透露验证码。"
-            ),
-        ),
-        # ── 5. 流程收尾 ──────────────────────────────────────────────────
-        StateConfig(
-            name="closing",
-            description="完成流程收尾与客户确认",
-            chat_state=(
-                "总结本次处置结果，确认用户已完成所需操作，"
-                "感谢客户的配合，并告知后续跟进方式。邀请客户对本次服务进行评价。"
-            ),
-        ),
-    ],
-    transitions=[
-        TransitionConfig(
-            source="identity_verify",
-            target="collect_info",
-            condition="身份验证成功",
-        ),
-        TransitionConfig(
-            source="identity_verify",
-            target="closing",
-            condition="验证失败达到 3 次",
-        ),
-        TransitionConfig(source="collect_info", target="risk_assess"),
-        TransitionConfig(
-            source="risk_assess",
-            target="high_risk",
-            condition="风险等级为 HIGH",
-        ),
-        TransitionConfig(
-            source="risk_assess",
-            target="medium_risk",
-            condition="风险等级为 MEDIUM",
-        ),
-        TransitionConfig(
-            source="risk_assess",
-            target="low_risk",
-            condition="风险等级为 LOW",
-        ),
-        TransitionConfig(source="high_risk", target="closing"),
-        TransitionConfig(source="medium_risk", target="closing"),
-        TransitionConfig(source="low_risk", target="closing"),
-    ],
-    global_guidelines=[
-        GuidelineConfig(
-            condition="用户情绪激动或表达强烈不满",
-            action="优先安抚情绪，表示理解和歉意，再继续流程",
-            priority=90,
-        ),
-        GuidelineConfig(
-            condition="用户多次询问同一问题",
-            action="耐心重复解释，保持专业和耐心",
-            priority=60,
-        ),
-        GuidelineConfig(
-            condition="用户提出流程之外的问题",
-            action="简短回答后，引导用户回到当前流程步骤",
-            priority=55,
-        ),
-    ],
-)
+_FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+fraud_config: JourneyConfig = load_journey(os.path.join(_FIXTURES_DIR, "fraud.yaml"))
 
 # ---------------------------------------------------------------------------
 # 预设对话脚本（模拟中风险场景全流程）
