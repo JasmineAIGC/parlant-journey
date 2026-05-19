@@ -13,9 +13,18 @@ pytest 共享配置：
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock
+
+# ---------------------------------------------------------------------------
+# 确保项目根目录在 sys.path 中，支持在任意工作目录下运行 pytest 或直接执行脚本
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 import pytest
 
