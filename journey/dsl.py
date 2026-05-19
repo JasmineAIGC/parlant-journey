@@ -65,6 +65,7 @@ class JourneyDSL:
         self._triggers: List[str] = []
         self._description: str = ""
         self._states: List[StateConfig] = []
+        self._states_map: dict = {}         # 状态名 → StateConfig，用于 O(1) 查找
         self._transitions: List[TransitionConfig] = []
         self._global_guidelines: List[GuidelineConfig] = []
 
@@ -122,14 +123,16 @@ class JourneyDSL:
                               False → FLUID 模式，允许 Agent 在话术基础上调整。
         """
         canned_cfg = CannedResponseConfig(template=canned, strict=strict) if canned else None
-        self._states.append(StateConfig(
+        s = StateConfig(
             name=name,
             description=description,
             chat_state=chat,
             tool_state=tool,
             tool_instruction=tool_instruction,
             canned_response=canned_cfg,
-        ))
+        )
+        self._states.append(s)
+        self._states_map[name] = s
         return self
 
     # ------------------------------------------------------------------
@@ -156,12 +159,12 @@ class JourneyDSL:
         Raises:
             ValueError: 若 state_name 对应的状态尚未添加。
         """
-        for s in self._states:
-            if s.name == state_name:
-                s.guidelines.append(GuidelineConfig(
-                    condition=condition, action=action, priority=priority
-                ))
-                return self
+        s = self._states_map.get(state_name)
+        if s is not None:
+            s.guidelines.append(GuidelineConfig(
+                condition=condition, action=action, priority=priority
+            ))
+            return self
         raise ValueError(
             f"状态 '{state_name}' 不存在，请先通过 .state('{state_name}', ...) 添加该状态。"
         )

@@ -165,12 +165,7 @@ class JourneyBuilder:
         """遍历所有状态，逐条注册节点级 guideline。"""
         assert self._journey is not None
         for state in self._config.states:
-            for guideline in state.guidelines:
-                await self._journey.create_guideline(
-                    condition=guideline.condition,
-                    action=guideline.action,
-                    priority=guideline.priority,
-                )
+            await self._register_guidelines(state.guidelines)
 
     # ------------------------------------------------------------------
     # 步骤⑤：注册全局行为规则
@@ -178,17 +173,21 @@ class JourneyBuilder:
 
     async def _register_global_guidelines(self) -> None:
         """注册 JourneyConfig.global_guidelines 中的所有全局规则。"""
+        await self._register_guidelines(self._config.global_guidelines)
+
+    # ------------------------------------------------------------------
+    # 内部工具
+    # ------------------------------------------------------------------
+
+    async def _register_guidelines(self, guidelines: list) -> None:
+        """将 guideline 列表逐条注册到当前 Journey。"""
         assert self._journey is not None
-        for guideline in self._config.global_guidelines:
+        for guideline in guidelines:
             await self._journey.create_guideline(
                 condition=guideline.condition,
                 action=guideline.action,
                 priority=guideline.priority,
             )
-
-    # ------------------------------------------------------------------
-    # 内部工具
-    # ------------------------------------------------------------------
 
     def _build_state_kwargs(
         self,

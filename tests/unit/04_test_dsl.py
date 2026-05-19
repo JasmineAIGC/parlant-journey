@@ -1,5 +1,5 @@
 """
-tests/unit/test_dsl.py — journey.dsl.JourneyDSL 和 journey.loader 单元测试
+tests/unit/04_test_dsl.py — journey.dsl.JourneyDSL 和 journey.loader 单元测试
 
 验证两种"快速场景迁移"工具：
   1. JourneyDSL — 流式链式 API，无需直接操作 dataclass

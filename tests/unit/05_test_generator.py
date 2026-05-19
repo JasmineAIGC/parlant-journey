@@ -1,5 +1,5 @@
 """
-tests/unit/test_generator.py — journey.generator 单元测试
+tests/unit/05_test_generator.py — journey.generator 单元测试
 
 通过 mock LiteLLM（litellm.acompletion）模拟 LLM 响应，无需真实 LLM 服务即可运行。
 覆盖：LLMConfig 构建（含 enable_thinking）、LiteLLM 工具函数、JSON 提取、

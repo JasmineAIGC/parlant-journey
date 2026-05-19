@@ -1,6 +1,6 @@
 """
-tests/integration/demo_fraud.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/integration/01_demo_fraud.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 欺诈处理 Journey — 完整对话演示
 ================================
@@ -13,10 +13,10 @@ tests/integration/demo_fraud.py
     2. 安装依赖：pip install -r requirements.txt
 
 运行方式：
-    python tests/integration/demo_fraud.py
+    python tests/integration/01_demo_fraud.py
 
 或以 pytest 跳过模式运行（LLM 服务不可用时自动跳过）：
-    pytest tests/integration/demo_fraud.py -v
+    pytest tests/integration/01_demo_fraud.py -v
 """
 
 from __future__ import annotations
