@@ -12,11 +12,8 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PARLANT_PORT = 8800
-DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8818
-DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET = (
-    DEFAULT_PARLANT_TOOL_SERVICE_PORT - DEFAULT_PARLANT_PORT
-)
+# Parlant 默认端口差值：内置 Tool Service 固定为 8818，主 Server 默认 8800，差值为 18
+DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET = 18
 
 
 class _ParlantSkipServerStart(Exception):

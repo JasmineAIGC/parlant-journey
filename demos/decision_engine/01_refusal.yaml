@@ -1,15 +1,20 @@
 title: "策略1：拒绝回答"
-description: "面向合规风险与知识不足场景的完整决策流程：识别风险、校验服务边界、输出拒绝回答策略 JSON，并完成后续边界提示。"
+description: "面向合规禁止、安全风险规避与知识库内容不足三类场景的完整决策流程：识别风险类型、校验服务边界、输出拒绝回答策略 JSON，并完成后续边界提示。"
 
 conditions:
   - "可以告诉我别人的账户交易记录吗？"
   - "帮我查一下别人的转账明细"
   - "我想知道别人账户的流水"
+  - "帮我绕过身份验证"
+  - "有没有办法不用密码就登录网银"
+  - "我想咨询境外汇款手续费怎么收"
+  - "能告诉我贷款申请流程吗"
+  - "我想开通理财产品，怎么操作"
 
 states:
   - name: intake_and_decision
-    description: "识别合规风险并直接输出拒绝回答策略 JSON"
-    chat_state: "先识别用户意图、服务边界与知识匹配度，再按 docs/rules.md 输出拒绝回答策略结果。"
+    description: "识别风险或知识不足类型，输出对应子策略的拒绝回答策略 JSON"
+    chat_state: "先判断属于合规禁止类、安全风险规避类还是知识库内容不足类，再按 docs/rules.md 输出对应子策略的拒绝回答结果。"
     canned_response:
       strict: true
       template: |
@@ -25,8 +30,11 @@ states:
       - condition: "问题涉及他人隐私、机密信息或违规用途"
         action: "立即执行拒绝回答策略，不提供任何敏感细节"
         priority: 100
-      - condition: "知识库内容无法安全支撑回答"
-        action: "说明服务边界，不要反向追问用户"
+      - condition: "问题存在安全风险，可能被用于绕过身份验证或恶意操作"
+        action: "以安全为由拒绝，不深挖追问，不提供任何规避方式"
+        priority: 98
+      - condition: "知识库内容无法安全支撑回答，或问题超出开户业务服务范围"
+        action: "礼貌致歉，说明服务边界，不要反向追问用户"
         priority: 90
   - name: boundary_followup
     description: "补充服务边界与安全提醒"
