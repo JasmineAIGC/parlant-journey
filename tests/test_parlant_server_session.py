@@ -78,13 +78,17 @@ def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events):
 @pytest.mark.asyncio
 async def test_run_conversation_reads_agent_message(monkeypatch: pytest.MonkeyPatch):
     events = [SimpleNamespace(data={"message": "您好，我来帮您处理"})]
-    ctx, agent, _ = _install_parlant_core_stubs(monkeypatch, events)
+    ctx, agent, fake_session_module = _install_parlant_core_stubs(monkeypatch, events)
 
     replies = []
     async for _user, reply in run_conversation(ctx, agent, ["你好"], timeout=3.0):
         replies.append(reply)
 
     assert replies == ["您好，我来帮您处理"]
+    assert fake_session_module.wait_calls
+    wait_kwargs = fake_session_module.wait_calls[0]
+    assert wait_kwargs["kinds"] is None
+    assert wait_kwargs["source"] is None
 
 
 @pytest.mark.asyncio
