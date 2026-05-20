@@ -223,7 +223,7 @@ def _patch_litellm_embedding_encoding_format() -> None:
                         client_kwargs["default_headers"] = {"access-key": access_key}
 
                     create_kwargs: dict[str, Any] = {
-                        model=model_name,
+                        "model": model_name,
                         "input": input_texts,
                     }
                     for key in ("dimensions", "timeout", "user", "extra_headers", "extra_query", "extra_body"):
