@@ -2,19 +2,7 @@
 journey.builder
 ~~~~~~~~~~~~~~~
 
-翻译层：将 JourneyConfig 转换为 Parlant Journey API 调用序列。
-
-内部实现细节，不对外暴露。
-
-数据流：
-
-    factory.create_journey(agent, config)
-      └─ JourneyBuilder(agent, config).build()
-           ├─ ① _create_journey()          — 创建 Journey 外壳
-           ├─ ② _create_canned_responses() — 预创建所有预设话术
-           ├─ ③ _build_dag()               — 构建状态有向无环图
-           ├─ ④ _register_node_guidelines()  — 注册节点级行为规则
-           └─ ⑤ _register_global_guidelines() — 注册全局行为规则
+内部翻译层：将 JourneyConfig 转换为 Parlant Journey API 调用序列。
 """
 
 from __future__ import annotations
@@ -27,13 +15,7 @@ from .models import JourneyConfig, StateConfig
 
 
 class JourneyBuilder:
-    """将 :class:`~journey.models.JourneyConfig` 翻译为 Parlant Journey 的内部构建器。
-
-    按正确顺序依次调用 Parlant SDK，完成 Journey 的完整构建。
-
-    **注意：** 这是内部实现细节，调用方应使用
-    :func:`~journey.factory.create_journey` 而非直接实例化本类。
-    """
+    """将 :class:`~journey.models.JourneyConfig` 翻译为 Parlant Journey 的内部构建器。"""
 
     def __init__(self, agent: p.Agent, config: JourneyConfig) -> None:
         self._agent = agent
@@ -225,4 +207,3 @@ class JourneyBuilder:
             )
 
         return kwargs
-
