@@ -71,14 +71,15 @@ class JourneyBuilder:
 
     async def _create_canned_responses(self) -> None:
         """为配置了 canned_response 的状态预创建 CannedResponse 对象，存入 _canrep_map。"""
-        states_with_canned = [s for s in self._config.states if s.canned_response is not None]
-        logger.debug("[JourneyBuilder] 步骤②：预创建预设话术  count=%d", len(states_with_canned))
-        for state in states_with_canned:
-            canned = await self._agent.create_canned_response(
-                template=state.canned_response.template,  # type: ignore[union-attr]
-            )
-            self._canrep_map[state.name] = canned
-            logger.debug("[JourneyBuilder] CannedResponse 已创建  state=%r", state.name)
+        canned_count = sum(1 for s in self._config.states if s.canned_response is not None)
+        logger.debug("[JourneyBuilder] 步骤②：预创建预设话术  count=%d", canned_count)
+        for state in self._config.states:
+            if state.canned_response is not None:
+                canned = await self._agent.create_canned_response(
+                    template=state.canned_response.template,
+                )
+                self._canrep_map[state.name] = canned
+                logger.debug("[JourneyBuilder] CannedResponse 已创建  state=%r", state.name)
 
     # ------------------------------------------------------------------
     # 步骤③：构建状态 DAG
