@@ -19,7 +19,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,33 @@ def _build_thinking_extra_body(
     return {"extra_body": {"enable_thinking": resolved_thinking}}
 
 
+@dataclass
+class _PatchedEmbeddingResponse:
+    """最小化的 embedding 响应代理，满足 Parlant 对 ``response.data`` 的访问需求。"""
+
+    model: str
+    data: List[dict[str, Any]]
+    usage: dict[str, int]
+
+
+def _get_embedding_response_field(obj: Any, field: str, default: Any = None) -> Any:
+    """同时兼容 dict / Pydantic model / 普通对象三种响应形态。"""
+    if isinstance(obj, dict):
+        return obj.get(field, default)
+    return getattr(obj, field, default)
+
+
+def _build_embedding_usage(response: Any) -> dict[str, int]:
+    """将 OpenAI 兼容响应中的 usage 规范化为 LiteLLM/Parlant 可接受的字典。"""
+    usage = _get_embedding_response_field(response, "usage")
+    prompt_tokens = _get_embedding_response_field(usage, "prompt_tokens", 0) if usage else 0
+    total_tokens = _get_embedding_response_field(usage, "total_tokens", 0) if usage else 0
+    return {
+        "prompt_tokens": int(prompt_tokens or 0),
+        "total_tokens": int(total_tokens or 0),
+    }
+
+
 def _patch_litellm_embedding_encoding_format() -> None:
     """修补 litellm.aembedding，解决 vLLM 端点的两个兼容性问题。
 
@@ -177,29 +204,48 @@ def _patch_litellm_embedding_encoding_format() -> None:
                     or os.getenv("LITELLM_PROVIDER_API_KEY")
                     or "EMPTY"
                 )
+                access_key: Optional[str] = (
+                    kwargs.get("access_key")
+                    or os.getenv("EMBEDDING_ACCESS_KEY")
+                    or os.getenv("QWEN3_ACCESS_KEY")
+                    or os.getenv("CONTEXTMIND_ACCESS_KEY")
+                    or os.getenv("LLM_ACCESS_KEY")
+                    or os.getenv("ACCESS_KEY")
+                )
                 input_texts = kwargs.get("input") or (args[1] if len(args) > 1 else None)
 
                 if api_base and model_name and input_texts:
-                    aclient = _AsyncOpenAI(api_key=api_key, base_url=api_base)
-                    resp = await aclient.embeddings.create(
+                    client_kwargs: dict[str, Any] = {
+                        "api_key": api_key,
+                        "base_url": api_base,
+                    }
+                    if access_key:
+                        client_kwargs["default_headers"] = {"access-key": access_key}
+
+                    create_kwargs: dict[str, Any] = {
                         model=model_name,
-                        input=input_texts,
-                    )
-                    # 构建 litellm 兼容响应（Parlant 通过 response.data[i]["embedding"] 访问）
-                    return litellm.EmbeddingResponse(
+                        "input": input_texts,
+                    }
+                    for key in ("dimensions", "timeout", "user", "extra_headers", "extra_query", "extra_body"):
+                        if kwargs.get(key) is not None:
+                            create_kwargs[key] = kwargs[key]
+
+                    aclient = _AsyncOpenAI(**client_kwargs)
+                    resp = await aclient.embeddings.create(**create_kwargs)
+                    data = _get_embedding_response_field(resp, "data") or []
+
+                    # 构建最小兼容响应（Parlant 通过 response.data[i]["embedding"] 访问）
+                    return _PatchedEmbeddingResponse(
                         model=model_name,
                         data=[
                             {
                                 "object": "embedding",
-                                "embedding": item.embedding,
-                                "index": item.index,
+                                "embedding": _get_embedding_response_field(item, "embedding"),
+                                "index": _get_embedding_response_field(item, "index", idx),
                             }
-                            for item in resp.data
+                            for idx, item in enumerate(data)
                         ],
-                        usage={
-                            "prompt_tokens": resp.usage.prompt_tokens,
-                            "total_tokens": resp.usage.total_tokens,
-                        },
+                        usage=_build_embedding_usage(resp),
                     )
             except ImportError:
                 logger.debug("[embedding patch] openai SDK 未安装，回退到 litellm")

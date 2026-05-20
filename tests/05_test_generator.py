@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import types
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -43,6 +44,7 @@ from tools.llm.client import (
     DEFAULT_MODEL,
     LLMClient,
     LLMConfig,
+    _patch_litellm_embedding_encoding_format,
     _build_thinking_extra_body,
     _is_thinking_model,
     _needs_openai_prefix,
@@ -142,6 +144,125 @@ class TestBuildThinkingExtraBody:
     def test_无base_url时放顶层(self):
         result = _build_thinking_extra_body(True, None)
         assert result == {"extra_body": {"enable_thinking": True}}
+
+
+class TestEmbeddingPatch:
+    @pytest.mark.asyncio
+    async def test_openai直连路径兼容无usage响应(self, monkeypatch):
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[0.1, 0.2], index=0)],
+                usage=None,
+            )
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="openai/Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+        )
+
+        assert result.data == [
+            {"object": "embedding", "embedding": [0.1, 0.2], "index": 0}
+        ]
+        assert result.usage == {"prompt_tokens": 0, "total_tokens": 0}
+        client_ctor.assert_called_once_with(
+            api_key="EMPTY",
+            base_url="http://emb.local/v1",
+        )
+        create_mock.assert_awaited_once_with(
+            model="Qwen3-Embedding-8B",
+            input=["你好"],
+        )
+        original.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_openai直连失败时回退litellm并改写encoding_format(self, monkeypatch):
+        original = AsyncMock(return_value="fallback-ok")
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(side_effect=RuntimeError("boom"))
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="openai/Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+            encoding_format=None,
+        )
+
+        assert result == "fallback-ok"
+        original.assert_awaited_once()
+        assert original.await_args.kwargs["encoding_format"] == "float"
+
+    @pytest.mark.asyncio
+    async def test_openai直连会透传access_key(self, monkeypatch):
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(data=[{"embedding": [1.0], "index": 0}], usage={})
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+        monkeypatch.setenv("EMBEDDING_ACCESS_KEY", "gateway-key")
+
+        _patch_litellm_embedding_encoding_format()
+
+        await fake_litellm.aembedding(
+            model="Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+        )
+
+        client_ctor.assert_called_once_with(
+            api_key="EMPTY",
+            base_url="http://emb.local/v1",
+            default_headers={"access-key": "gateway-key"},
+        )
 
 
 # ---------------------------------------------------------------------------
