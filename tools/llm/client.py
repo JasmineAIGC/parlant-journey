@@ -160,9 +160,11 @@ def _patch_litellm_embedding_encoding_format() -> None:
 
                 # 提取调用参数
                 model_name: str = kwargs.get("model") or (args[0] if args else "")
-                # 剥除 LiteLLM 路由前缀（如 "openai/Qwen3-Embedding-8B" → "Qwen3-Embedding-8B"）
-                if "/" in model_name:
-                    model_name = model_name.split("/", 1)[-1]
+                # 剥除 LiteLLM 已知路由前缀（如 "openai/Qwen3-Embedding-8B" → "Qwen3-Embedding-8B"）
+                for _pfx in _LITELLM_PROVIDER_PREFIXES:
+                    if model_name.startswith(_pfx):
+                        model_name = model_name[len(_pfx):]
+                        break
 
                 api_base: Optional[str] = (
                     kwargs.get("api_base")
