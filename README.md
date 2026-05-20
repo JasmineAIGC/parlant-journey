@@ -6,15 +6,94 @@
 ## 安装
 
 ```bash
-pip install parlant-journey
+pip install -r requirements.txt
+# 或仅安装核心
+pip install parlant
 ```
 
 ## 快速开始
 
 ```python
-from parlant_journey import create_journey, JourneyConfig, StateConfig, TransitionConfig
+import parlant.sdk as p
+from journey import (
+    create_journey,
+    JourneyConfig,
+    StateConfig,
+    TransitionConfig,
+    GuidelineConfig,
+    CannedResponseConfig,
+)
 
-journey = await create_journey(agent, config)
+async with p.Server(...) as server:
+    agent = await server.create_agent(...)
+
+    config = JourneyConfig(
+        title="欺诈处理",
+        triggers=["我卡被盗刷了", "可疑交易"],
+        description="处理欺诈交易的标准流程",
+        states=[
+            StateConfig(
+                name="verify",
+                chat_state="请验证您的身份",
+                canned_response=CannedResponseConfig(
+                    template="为了账户安全，请提供您的姓名和身份证后四位。",
+                    strict=True,
+                ),
+            ),
+            StateConfig(name="closing", chat_state="感谢您的配合"),
+        ],
+        transitions=[
+            TransitionConfig(source="verify", target="closing", condition="验证成功"),
+        ],
+        global_guidelines=[
+            GuidelineConfig(condition="用户情绪激动", action="先安抚情绪", priority=90),
+        ],
+    )
+
+    journey = await create_journey(agent, config)
 ```
 
-详见 `examples/fraud.py` 和 `ARCHITECTURE.md`。
+## 三层控制模型
+
+| 维度 | 配置字段 | 效果 |
+|------|---------|------|
+| 流程（路径） | `states` + `transitions` | 声明式 DAG，自动处理分支与汇聚 |
+| 行为（规则） | `guidelines`（节点级 + 全局） | 条件触发的行为约束 |
+| 话术（合规） | `canned_response`（节点级） | 关键节点锁定话术，零幻觉 |
+
+## 完整对话演示
+
+无需 Parlant Server，直接运行欺诈处理全流程对话演示（使用 LLMClient 驱动）：
+
+```bash
+# 1. 在 third_party/.env 中配置 LLM 服务
+# 2. 安装依赖
+pip install -r requirements.txt
+# 3. 运行演示
+python tests/00_fraud_demo.py
+```
+
+## 目录说明
+
+```
+journey/              核心包（Python import: from journey import ...）
+tests/
+  00_fraud_demo.py    完整欺诈处理对话演示（JourneySimulator + LLMClient）
+  01_test_models.py   数据模型单元测试
+  02_test_builder.py  构建器单元测试（mock SDK）
+  03_test_factory.py  工厂函数单元测试
+third_party/          LLM / Embedding 客户端（model_client）
+docs/ARCHITECTURE.md  完整技术方案（权威文档）
+```
+
+## 文档
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 完整技术方案（推荐阅读）
+- [tests/00_fraud_demo.py](tests/00_fraud_demo.py) — 欺诈处理完整对话演示
+
+## 测试
+
+```bash
+pip install -e ".[dev]"
+pytest tests/01_test_models.py tests/02_test_builder.py tests/03_test_factory.py -v
+```
