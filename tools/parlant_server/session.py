@@ -7,7 +7,10 @@ Parlant 多轮对话辅助函数。
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncGenerator, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 async def run_conversation(
@@ -65,6 +68,11 @@ async def run_conversation(
                 timeout=timeout,
             )
         except TimeoutError:
+            logger.warning(
+                "[run_conversation] 等待 Agent 回复超时  session_id=%s  timeout=%.2fs",
+                session.id,
+                timeout,
+            )
             yield user_msg, ""
             continue
 

@@ -46,6 +46,17 @@ class ParlantServerContext:
         server_factory: Optional[Callable[..., Any]] = None,
         server_kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
+        """初始化一个无 UI 的 Parlant Server 上下文。
+
+        Args:
+            nlp_service: Parlant 使用的 NLP service；为空时默认使用 ``p.NLPServices.litellm``。
+            bridge_env: 若为 True 且未显式提供 ``prepare_environment``，则自动桥接项目中的 LLM 环境变量。
+            config: 可选的完整 ``ParlantServerConfig``；提供后优先使用。
+            port: 显式指定 Parlant Server 监听端口；当同时提供 ``server_kwargs['port']`` 时，以此参数为准。
+            prepare_environment: 进入上下文前执行的环境准备函数。
+            server_factory: 自定义 Server 工厂，默认使用 ``parlant.sdk.Server``。
+            server_kwargs: 传递给底层 Server 的额外关键字参数。
+        """
         if config is None:
             if prepare_environment is None and bridge_env:
                 prepare_environment = _default_prepare_environment

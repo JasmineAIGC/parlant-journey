@@ -61,3 +61,12 @@ def test_decision_engine_demo_invalid_port_env_raises(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="PARLANT_SERVER_PORT 必须为整数"):
         _load_demo_port()
+
+
+def test_decision_engine_demo_out_of_range_port_env_raises(monkeypatch) -> None:
+    monkeypatch.setenv("PARLANT_SERVER_PORT", "70000")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="PARLANT_SERVER_PORT 必须位于 1-65535 之间"):
+        _load_demo_port()
