@@ -205,13 +205,19 @@ def _patch_litellm_embedding_encoding_format() -> None:
                 raise
 
             # 构建最小兼容响应（Parlant 通过 response.data[i]["embedding"] 访问向量）
+            usage = {"prompt_tokens": 0, "total_tokens": 0}
+            if resp.usage:
+                usage = {
+                    "prompt_tokens": resp.usage.prompt_tokens or 0,
+                    "total_tokens": resp.usage.total_tokens or 0,
+                }
             return _PatchedEmbeddingResponse(
                 model=model,
                 data=[
                     {"object": "embedding", "embedding": item.embedding, "index": item.index}
                     for item in resp.data
                 ],
-                usage={"prompt_tokens": 0, "total_tokens": 0},
+                usage=usage,
             )
 
         litellm.aembedding = _patched

@@ -148,8 +148,8 @@ class TestBuildThinkingExtraBody:
 
 class TestEmbeddingPatch:
     @pytest.mark.asyncio
-    async def test_openai直连路径_正常返回Parlant兼容响应(self, monkeypatch):
-        """api_base 可用时用 OpenAI SDK 直连，返回 Parlant 可用的 data/usage 结构。"""
+    async def test_openai直连路径_usage为None时默认零(self, monkeypatch):
+        """响应中 usage=None 时，返回的 usage 应默认为零而非崩溃。"""
         original = AsyncMock()
         fake_litellm = types.SimpleNamespace(
             aembedding=original,
@@ -185,6 +185,7 @@ class TestEmbeddingPatch:
         assert result.data == [
             {"object": "embedding", "embedding": [0.1, 0.2], "index": 0}
         ]
+        # usage=None 时安全降级为全零
         assert result.usage == {"prompt_tokens": 0, "total_tokens": 0}
         client_ctor.assert_called_once_with(
             api_key="EMPTY",
@@ -195,6 +196,42 @@ class TestEmbeddingPatch:
             input=["你好"],
         )
         original.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_openai直连路径_usage有值时正确读取(self, monkeypatch):
+        """响应中有实际 usage 时，应读取真实 token 数而非写死为零。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[0.5], index=0)],
+                usage=SimpleNamespace(prompt_tokens=7, total_tokens=7),
+            )
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="openai/Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+        )
+
+        assert result.usage == {"prompt_tokens": 7, "total_tokens": 7}
 
     @pytest.mark.asyncio
     async def test_EMBEDDING_BASE_URL优先于kwargs中的api_base(self, monkeypatch):
