@@ -1,5 +1,5 @@
 title: "策略6：问候/话题过渡"
-description: "面向简单问候、负面情绪安抚、用户感谢、闲聊话题及用户表达不满五类场景的完整流程：先识别情绪或话题类型，再执行安抚或礼貌回应，最后过渡回业务处理。"
+description: "面向简单问候、负面情绪安抚、用户感谢（非办结场景）、闲聊话题及用户表达不满五类场景的完整流程：先识别情绪或话题类型，再执行安抚或礼貌回应，最后过渡回业务处理。"
 
 conditions:
   - "回复也太慢了，体验太差！"
@@ -7,25 +7,27 @@ conditions:
   - "你好，我有点着急"
   - "你好"
   - "您好，请问有人吗"
-  - "非常感谢你的帮助"
   - "谢谢你"
+  - "感谢你的帮助"
   - "今天天气真好啊"
   - "你是AI吗"
+  - "你会说中文吗"
+  - "等了好久了，什么时候能答复我"
 
 states:
   - name: intake_and_decision
     description: "识别情绪或话题类型，输出对应子策略的问候/话题过渡策略 JSON"
-    chat_state: "先判断用户是问候、致谢、闲聊还是表达不满，选择对应子策略后按 docs/rules.md 输出问候/话题过渡策略。"
+    chat_state: "先判断用户是问候、致谢（非办结场景）、闲聊还是表达不满，选择对应子策略后按 docs/rules.md 输出问候/话题过渡策略。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "问候/话题过渡",
-          "second_layer_strategy": "安抚用户不满情绪",
+          "second_layer_strategy": "<简单问候回应 | 安抚负面情绪 | 用户表达感谢 | 闲聊话题应对 | 用户表达不满>",
           "selected_candidate_id": [],
-          "reasoning": "用户当前情绪明显不满，应先致歉安抚，再平稳过渡到后续处理或人工协助。",
+          "reasoning": "<简洁说明：1.用户情绪/话题类型识别；2.子策略选择依据；3.过渡方式>",
           "suggested_question": "",
-          "additional_guidance": "诚恳致歉，优先安抚情绪，并引导转接人工客服。"
+          "additional_guidance": "<针对本次情绪或话题的补充提示，如致歉安抚、引导业务或礼貌回应>"
         }
     guidelines:
       - condition: "用户表达不满、抱怨或负面情绪"
@@ -34,7 +36,7 @@ states:
       - condition: "用户发起简单问候或询问是否有人"
         action: "礼貌友好回复，恪守礼仪，引导至业务咨询"
         priority: 90
-      - condition: "用户表达感谢"
+      - condition: "用户表达感谢但当前问题尚未办结"
         action: "礼貌回应，维持良好沟通氛围，告知可继续提供帮助"
         priority: 85
       - condition: "用户发起闲聊或与业务无关的话题"

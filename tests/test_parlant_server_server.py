@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from tools.parlant_server.server import (
-    DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET,
+    DEFAULT_PARLANT_PORT,
+    DEFAULT_PARLANT_TOOL_SERVICE_PORT,
     ParlantServerConfig,
     ParlantServerContext,
 )
@@ -46,7 +47,7 @@ async def test_context_passes_explicit_port_to_server_factory(monkeypatch: pytes
 
     assert captured['nlp_service'] == 'litellm'
     assert captured['port'] == 9321
-    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+    assert 'tool_service_port' not in captured
 
 
 @pytest.mark.asyncio
@@ -71,7 +72,7 @@ async def test_context_explicit_port_overrides_server_kwargs_port(monkeypatch: p
         pass
 
     assert captured['port'] == 9321
-    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+    assert 'tool_service_port' not in captured
 
 
 @pytest.mark.asyncio

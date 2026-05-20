@@ -1,8 +1,8 @@
 """
-demos/decision_engine/demo_decision_engine.py  —  docs/rules.md 银行智能呼叫中心战略决策引擎演示
+demos/call_center/demo_call_center.py  —  docs/rules.md 银行智能呼叫中心对话演示
 
 运行前提：项目根目录 .env 中配置好 LLM。
-直接运行：python demos/decision_engine/demo_decision_engine.py
+直接运行：python demos/call_center/demo_call_center.py
 """
 
 from __future__ import annotations
@@ -56,22 +56,22 @@ DEMO_SCRIPT: List[str] = [
 async def run_demo() -> None:
     """启动 Parlant Server，注册 7 个策略 Journey 并运行多轮演示对话。"""
     print("=" * 72)
-    print("  Journey 对话演示：银行智能呼叫中心战略决策引擎")
+    print("  Journey 对话演示：银行智能呼叫中心")
     print("  策略：" + " | ".join(cfg.title for cfg in decision_configs))
     print("=" * 72)
 
     try:
         async with ParlantServerContext() as ctx:
             agent = await ctx.create_agent(
-                "银行策略决策引擎",
-                "依据 docs/rules.md 输出银行呼叫中心策略决策 JSON",
+                "银行呼叫中心智能客服",
+                "依据 docs/rules.md 输出银行呼叫中心应答策略 JSON",
             )
             await register_journeys(agent, decision_configs)
 
             print("\n─── 对话开始（Parlant Server 驱动，多 Journey）───")
             turn = 0
             async for user_msg, reply in run_conversation(
-                ctx, agent, DEMO_SCRIPT, title="decision-engine"
+                ctx, agent, DEMO_SCRIPT, title="call-center"
             ):
                 turn += 1
                 print(f"\n[Turn {turn}]")

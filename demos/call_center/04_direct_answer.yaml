@@ -10,23 +10,25 @@ conditions:
   - "怎么使用网上银行查询余额"
   - "如何设置每日交易限额"
   - "我已满18岁且是日本国籍，可以开户吗"
+  - "我是日本国籍，年满18岁，符合开户条件吗"
   - "帮我接人工客服"
   - "我要转人工处理"
+  - "我想要人工服务"
 
 states:
   - name: intake_and_decision
     description: "确认问题清晰且知识充足，输出对应子策略的直接作答策略 JSON"
     chat_state: "先确认用户问题是否清晰、知识是否完整，再按 docs/rules.md 判断属于哪个子场景（常规解答、产品推荐、操作指引、资质告知或转接人工），输出直接作答策略。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "直接作答",
-          "second_layer_strategy": "常规问题完整解答",
-          "selected_candidate_id": ["k1", "k2", "k3"],
-          "reasoning": "用户正在比较线下、邮寄、线上三种开户渠道的办理时效，问题清晰且知识信息完整，可直接结构化作答。",
+          "second_layer_strategy": "<常规问题完整解答 | 多问题拆分解答 | 产品/服务推荐 | 操作指引说明 | 告知开户资质不符 | 告知符合开户条件 | 用户主动要求转接人工>",
+          "selected_candidate_id": ["<高度匹配的知识ID，无则填空数组>"],
+          "reasoning": "<简洁说明：1.用户意图分析；2.知识筛选逻辑（可用知识及选用原因）；3.策略匹配依据>",
           "suggested_question": "",
-          "additional_guidance": "同步告知线下与线上最快 3 个工作日可获得关键结果，邮寄渠道约 1 周收到申请表。"
+          "additional_guidance": "<针对本次作答的补充说明或注意事项>"
         }
     guidelines:
       - condition: "用户问题清晰且已有完整知识支持"

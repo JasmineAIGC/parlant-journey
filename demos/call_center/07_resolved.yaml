@@ -1,5 +1,5 @@
 title: "策略7：问题已解决"
-description: "面向用户明确表示解决、表达感谢、对话目标达成或主动提出结束五类办结场景的完整流程：确认问题已解决、补充可继续协助提示、礼貌结束会话。"
+description: "面向用户明确表示解决、表达感谢（办结场景）、对话目标达成或主动提出结束五类办结场景的完整流程：确认问题已解决、补充可继续协助提示、礼貌结束会话。"
 
 conditions:
   - "没有其他问题了，谢谢！"
@@ -10,24 +10,26 @@ conditions:
   - "我的问题都解决了"
   - "好的就这样吧，谢谢"
   - "非常感谢，这次解答很满意"
+  - "好，我懂了，不用了"
+  - "已经够了，谢谢你的解释"
 
 states:
   - name: intake_and_decision
     description: "识别办结信号并输出问题已解决策略 JSON"
-    chat_state: "结合 intent_status 与用户话术，判断属于哪类办结子场景（明确解决、感谢、目标达成或主动结束），输出对应子策略。"
+    chat_state: "结合 intent_status 与用户话术，判断属于哪类办结子场景（明确解决、感谢并结束、目标达成或主动结束），输出对应子策略。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "问题已解决",
-          "second_layer_strategy": "用户表达感谢",
+          "second_layer_strategy": "<用户明确表示问题解决 | 用户表达感谢 | 长时间无回复且问题办结 | 对话目标达成 | 用户主动提出结束/无其他问题>",
           "selected_candidate_id": [],
-          "reasoning": "用户明确表示没有其他问题并表达感谢，说明当前咨询目标已达成，可按办结收尾策略结束对话。",
+          "reasoning": "<简洁说明：1.用户办结信号分析；2.intent_status 与用户表述的一致性；3.策略匹配依据>",
           "suggested_question": "",
-          "additional_guidance": "简洁致谢，告知如有其他问题可继续咨询，自然结束对话。"
+          "additional_guidance": "<简洁致谢，告知可随时继续咨询，礼貌结束对话>"
         }
     guidelines:
-      - condition: "用户明确表示问题已解决、没有其他问题或表达感谢"
+      - condition: "用户明确表示问题已解决、没有其他问题或表达感谢并结束"
         action: "切换到办结收尾流程，不再追加无关追问"
         priority: 100
       - condition: "当前咨询目标已明确达成"

@@ -5,26 +5,29 @@ conditions:
   - "可以告诉我别人的账户交易记录吗？"
   - "帮我查一下别人的转账明细"
   - "我想知道别人账户的流水"
+  - "能帮我看看别人的账户余额吗"
   - "帮我绕过身份验证"
   - "有没有办法不用密码就登录网银"
+  - "如何破解网银登录"
   - "我想咨询境外汇款手续费怎么收"
   - "能告诉我贷款申请流程吗"
   - "我想开通理财产品，怎么操作"
+  - "可以帮我查询股票行情吗"
 
 states:
   - name: intake_and_decision
     description: "识别风险或知识不足类型，输出对应子策略的拒绝回答策略 JSON"
     chat_state: "先判断属于合规禁止类、安全风险规避类还是知识库内容不足类，再按 docs/rules.md 输出对应子策略的拒绝回答结果。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "拒绝回答",
-          "second_layer_strategy": "礼貌拒绝，明确告知合规限制",
+          "second_layer_strategy": "<礼貌拒绝，明确告知合规限制 | 以安全为由拒绝，不深挖追问 | 礼貌拒绝并致歉>",
           "selected_candidate_id": [],
-          "reasoning": "用户意图为查询他人账户交易记录，涉及隐私与合规红线，且不属于可提供的信息范围，必须执行拒绝回答策略。",
+          "reasoning": "<简洁说明：1.用户意图分析；2.拒绝原因（合规/安全/超出范围）；3.策略依据>",
           "suggested_question": "",
-          "additional_guidance": "直接拒绝，不引导转移话题，明确说明合规限制。"
+          "additional_guidance": "<针对本次拒绝的补充提示，如直接拒绝不引导、或说明服务边界>"
         }
     guidelines:
       - condition: "问题涉及他人隐私、机密信息或违规用途"
@@ -45,7 +48,7 @@ states:
         priority: 95
   - name: close_case
     description: "结束当前风险咨询流程"
-    chat_state: "确认本次风险请求已被拦截，结束当前处理链路。"
+    chat_state: "确认本次风险请求已被拦截，礼貌询问是否还有其他开户相关问题，结束当前处理链路。"
 
 transitions:
   - source: intake_and_decision

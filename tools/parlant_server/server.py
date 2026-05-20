@@ -12,8 +12,9 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Parlant 默认端口差值：内置 Tool Service 固定为 8818，主 Server 默认 8800，差值为 18
-DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET = 18
+# Parlant 默认端口：主 Server 默认 8800，内置 Tool Service 默认 8818
+DEFAULT_PARLANT_PORT = 8800
+DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8818
 
 
 class _ParlantSkipServerStart(Exception):
@@ -58,7 +59,7 @@ class ParlantServerContext:
             bridge_env: 若为 True 且未显式提供 ``prepare_environment``，则自动桥接项目中的 LLM 环境变量。
             config: 可选的完整 ``ParlantServerConfig``；提供后优先使用。
             port: 显式指定 Parlant Server 监听端口；当同时提供 ``server_kwargs['port']`` 时，以此参数为准。
-            tool_service_port: 显式指定内置 Tool Service 监听端口；未提供时，若设置了 ``port``，则自动按默认偏移量派生。
+            tool_service_port: 显式指定内置 Tool Service 监听端口；未提供时，由 Parlant Server 自行使用其默认值。
             prepare_environment: 进入上下文前执行的环境准备函数。
             server_factory: 自定义 Server 工厂，默认使用 ``parlant.sdk.Server``。
             server_kwargs: 传递给底层 Server 的额外关键字参数。
@@ -158,9 +159,6 @@ class ParlantServerContext:
             tool_service_port = (
                 raw_tool_service_port if isinstance(raw_tool_service_port, int) else None
             )
-
-        if tool_service_port is None and port is not None:
-            tool_service_port = port + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
 
         return port, tool_service_port
 

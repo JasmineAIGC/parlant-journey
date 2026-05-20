@@ -10,21 +10,23 @@ conditions:
   - "换个话题吧"
   - "我换一个问题问你"
   - "那个先放一边，我想问别的"
+  - "不用了，我自己再想想"
+  - "先这样吧，我回去再看看"
 
 states:
   - name: intake_and_decision
     description: "识别终止意愿、回避行为或话题切换，输出用户主动终止咨询策略 JSON"
     chat_state: "结合用户当前表述与 intent_status，判断是主动提出结束、回避问题还是切换话题，选择对应子策略。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "用户主动终止咨询",
-          "second_layer_strategy": "用户主动提出结束",
+          "second_layer_strategy": "<用户主动提出结束 | 用户回避问题 | 用户切换话题>",
           "selected_candidate_id": [],
-          "reasoning": "用户明确表示不再继续办理并希望结束当前咨询，应尊重用户意愿，执行用户主动终止咨询策略。",
+          "reasoning": "<简洁说明：1.用户意图分析；2.判断依据（明确结束/回避/切换）；3.策略匹配>",
           "suggested_question": "",
-          "additional_guidance": "确认终止意愿，礼貌询问是否还有其他需求。"
+          "additional_guidance": "<针对本次终止场景的补充提示，如礼貌询问是否有其他需求>"
         }
     guidelines:
       - condition: "用户明确表达结束、暂停或放弃办理"
