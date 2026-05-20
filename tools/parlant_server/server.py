@@ -13,8 +13,8 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger(__name__)
 
 # Parlant 默认端口：主 Server 默认 8800，内置 Tool Service 默认 8818
-DEFAULT_PARLANT_PORT = 8800
-DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8818
+DEFAULT_PARLANT_PORT = 8001
+DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8002
 
 
 class _ParlantSkipServerStart(Exception):
@@ -92,10 +92,12 @@ class ParlantServerContext:
         server_factory = self._config.server_factory or p.Server
         server_kwargs = dict(self._config.server_kwargs)
         port, tool_service_port = self._resolve_ports(server_kwargs)
-        if port is not None:
-            server_kwargs["port"] = port
-        if tool_service_port is not None:
-            server_kwargs["tool_service_port"] = tool_service_port
+        
+        # 确保使用我们定义的默认端口，避免 Parlant SDK 使用其内部默认值（如 8818）
+        server_kwargs["port"] = port if port is not None else DEFAULT_PARLANT_PORT
+        server_kwargs["tool_service_port"] = (
+            tool_service_port if tool_service_port is not None else DEFAULT_PARLANT_TOOL_SERVICE_PORT
+        )
 
         logger.info(
             "[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s  port=%s  tool_service_port=%s",
