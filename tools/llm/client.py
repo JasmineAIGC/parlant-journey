@@ -121,6 +121,41 @@ def _build_thinking_extra_body(
     return {"extra_body": {"enable_thinking": resolved_thinking}}
 
 
+def _patch_litellm_embedding_encoding_format() -> None:
+    """修补 litellm.aembedding，将 encoding_format=None 替换为 "float"。
+
+    vLLM 的 /v1/embeddings 端点要求 encoding_format 必须是
+    'float'、'base64'、'bytes' 或 'bytes_only' 之一；
+    传入 None（JSON null）会触发 400 Bad Request。
+
+    Parlant 的 LiteLLM NLP 服务在调用 litellm.aembedding 时会传递
+    encoding_format=None，本函数通过包装函数将其替换为 "float"。
+
+    幂等：多次调用只执行一次修补（通过 _journey_emb_patched 标记判断）。
+    """
+    try:
+        import litellm  # type: ignore[import]
+
+        if getattr(litellm, "_journey_emb_patched", False):
+            return
+
+        _orig = litellm.aembedding
+
+        import functools
+
+        @functools.wraps(_orig)
+        async def _patched(*args, **kwargs):
+            if kwargs.get("encoding_format") is None:
+                kwargs["encoding_format"] = "float"
+            return await _orig(*args, **kwargs)
+
+        litellm.aembedding = _patched
+        litellm._journey_emb_patched = True
+        logger.debug("[bridge_parlant_litellm_env] litellm.aembedding patched: encoding_format None→float")
+    except Exception as exc:
+        logger.debug("[bridge_parlant_litellm_env] embedding patch 失败（非致命）: %s", exc)
+
+
 def bridge_parlant_litellm_env() -> dict:
     """将 .env 中的 LLM/Embedding 配置桥接到 Parlant LiteLLM 所需环境变量。
 
@@ -133,6 +168,9 @@ def bridge_parlant_litellm_env() -> dict:
       **未设置时 Parlant 默认使用 jinaai/jina-embeddings-v2-base-en（需从
       HuggingFace 下载）**，内网环境下必须通过此变量指定自定义 Embedding 模型。
     - ``LITELLM_EMBEDDING_DIMENSIONS`` — Embedding 向量维度（默认 1536）
+
+    本函数还会修补 ``litellm.aembedding``，将 ``encoding_format=None`` 替换为
+    ``"float"``，避免 vLLM 端点因收到 JSON null 而返回 400 Bad Request。
 
     本函数将现有 .env 中的 LLM/Embedding 配置自动回填，
     优先保留用户已显式设置的 ``LITELLM_*`` 值。
@@ -180,6 +218,9 @@ def bridge_parlant_litellm_env() -> dict:
     ]):
         os.environ.setdefault("LITELLM_EMBEDDING_DIMENSIONS", emb_dims)
         resolved["LITELLM_EMBEDDING_DIMENSIONS"] = os.environ["LITELLM_EMBEDDING_DIMENSIONS"]
+
+    # vLLM 不接受 encoding_format=None：修补 litellm.aembedding 以默认 "float"
+    _patch_litellm_embedding_encoding_format()
 
     return resolved
 
