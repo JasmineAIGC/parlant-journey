@@ -148,7 +148,8 @@ class TestBuildThinkingExtraBody:
 
 class TestEmbeddingPatch:
     @pytest.mark.asyncio
-    async def test_openai直连路径兼容无usage响应(self, monkeypatch):
+    async def test_openai直连路径_正常返回Parlant兼容响应(self, monkeypatch):
+        """api_base 可用时用 OpenAI SDK 直连，返回 Parlant 可用的 data/usage 结构。"""
         original = AsyncMock()
         fake_litellm = types.SimpleNamespace(
             aembedding=original,
@@ -180,6 +181,7 @@ class TestEmbeddingPatch:
             api_key="EMPTY",
         )
 
+        # 响应结构满足 Parlant 的 response.data[i]["embedding"] 访问
         assert result.data == [
             {"object": "embedding", "embedding": [0.1, 0.2], "index": 0}
         ]
@@ -195,40 +197,8 @@ class TestEmbeddingPatch:
         original.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_openai直连失败时回退litellm并改写encoding_format(self, monkeypatch):
-        original = AsyncMock(return_value="fallback-ok")
-        fake_litellm = types.SimpleNamespace(
-            aembedding=original,
-            _journey_emb_patched=False,
-        )
-
-        create_mock = AsyncMock(side_effect=RuntimeError("boom"))
-        client_ctor = MagicMock(
-            return_value=SimpleNamespace(
-                embeddings=SimpleNamespace(create=create_mock)
-            )
-        )
-        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
-
-        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
-        monkeypatch.setitem(sys.modules, "openai", fake_openai)
-
-        _patch_litellm_embedding_encoding_format()
-
-        result = await fake_litellm.aembedding(
-            model="openai/Qwen3-Embedding-8B",
-            input=["你好"],
-            api_base="http://emb.local/v1",
-            api_key="EMPTY",
-            encoding_format=None,
-        )
-
-        assert result == "fallback-ok"
-        original.assert_awaited_once()
-        assert original.await_args.kwargs["encoding_format"] == "float"
-
-    @pytest.mark.asyncio
-    async def test_openai直连会透传access_key(self, monkeypatch):
+    async def test_EMBEDDING_BASE_URL优先于kwargs中的api_base(self, monkeypatch):
+        """EMBEDDING_BASE_URL 环境变量优先级高于 Parlant 传入的 kwargs['api_base']（LLM URL）。"""
         original = AsyncMock()
         fake_litellm = types.SimpleNamespace(
             aembedding=original,
@@ -236,7 +206,10 @@ class TestEmbeddingPatch:
         )
 
         create_mock = AsyncMock(
-            return_value=SimpleNamespace(data=[{"embedding": [1.0], "index": 0}], usage={})
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[1.0], index=0)],
+                usage=None,
+            )
         )
         client_ctor = MagicMock(
             return_value=SimpleNamespace(
@@ -247,22 +220,83 @@ class TestEmbeddingPatch:
 
         monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
         monkeypatch.setitem(sys.modules, "openai", fake_openai)
-        monkeypatch.setenv("EMBEDDING_ACCESS_KEY", "gateway-key")
+        # EMBEDDING_BASE_URL 专用于嵌入服务（独立 vLLM 实例）
+        monkeypatch.setenv("EMBEDDING_BASE_URL", "http://emb-server.local/v1")
 
         _patch_litellm_embedding_encoding_format()
 
         await fake_litellm.aembedding(
             model="Qwen3-Embedding-8B",
             input=["你好"],
-            api_base="http://emb.local/v1",
+            # Parlant 传入的是 LLM 服务地址，不应被当作 embedding 地址使用
+            api_base="http://wrong-llm-server.local/v1",
             api_key="EMPTY",
         )
 
+        # 应使用 EMBEDDING_BASE_URL，而非 kwargs 中的 api_base
         client_ctor.assert_called_once_with(
             api_key="EMPTY",
-            base_url="http://emb.local/v1",
-            default_headers={"access-key": "gateway-key"},
+            base_url="http://emb-server.local/v1",
         )
+
+    @pytest.mark.asyncio
+    async def test_openai直连失败时异常向上传递_不回退litellm(self, monkeypatch):
+        """api_base 已设置时，OpenAI 直连失败直接抛出，不静默回退到同样会失败的 litellm。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(side_effect=RuntimeError("embedding server unreachable"))
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        with pytest.raises(RuntimeError, match="embedding server unreachable"):
+            await fake_litellm.aembedding(
+                model="openai/Qwen3-Embedding-8B",
+                input=["你好"],
+                api_base="http://emb.local/v1",
+                api_key="EMPTY",
+            )
+
+        # litellm 回退路径不应被调用（调它也会失败）
+        original.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_无base_url时回退litellm并修复encoding_format(self, monkeypatch):
+        """无 base_url（云端 API）时回退 litellm，并把 encoding_format=None 改为 float。"""
+        original = AsyncMock(return_value="cloud-ok")
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="text-embedding-ada-002",
+            input=["hello"],
+            encoding_format=None,
+            # 无 api_base、无 EMBEDDING_BASE_URL、无 LITELLM_PROVIDER_BASE_URL → 云端路径
+        )
+
+        assert result == "cloud-ok"
+        original.assert_awaited_once()
+        assert original.await_args.kwargs["encoding_format"] == "float"
 
 
 # ---------------------------------------------------------------------------
