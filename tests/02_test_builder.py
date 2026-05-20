@@ -72,7 +72,7 @@ def _简单配置(title: str = "测试流程") -> JourneyConfig:
     """返回最小可用的 JourneyConfig（单状态，无转移）。"""
     return JourneyConfig(
         title=title,
-        triggers=["go"],
+        conditions=["go"],
         description="单元测试用配置",
         states=[StateConfig(name="A", chat_state="执行 A")],
         transitions=[],
@@ -83,7 +83,7 @@ def _线性配置() -> JourneyConfig:
     """返回 A → B → C 的线性配置。"""
     return JourneyConfig(
         title="线性流程",
-        triggers=["go"],
+        conditions=["go"],
         description="线性测试",
         states=[
             StateConfig(name="A", chat_state="执行 A"),
@@ -124,7 +124,7 @@ class Test预创建预设话术:
     @pytest.mark.asyncio
     async def test_有话术配置时创建CannedResponse(self, mock_agent, mock_journey):
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[
                 StateConfig(name="verify",
                             canned_response=CannedResponseConfig(template="请验证身份。")),
@@ -190,7 +190,7 @@ class TestDAG线性拓扑:
         state_A.transition_to = AsyncMock(return_value=trans_B)
 
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[StateConfig(name="A", chat_state="a"), StateConfig(name="B", chat_state="b")],
             transitions=[TransitionConfig(source="A", target="B", condition="用户已确认")],
         )
@@ -216,7 +216,7 @@ class TestDAG分支拓扑:
         state_A.transition_to = AsyncMock(side_effect=[trans_B, trans_C])
 
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[
                 StateConfig(name="A", chat_state="开始"),
                 StateConfig(name="B", chat_state="分支B"),
@@ -255,7 +255,7 @@ class TestDAG汇聚拓扑:
         state_C.transition_to = AsyncMock()  # 汇聚：复用 state_D，不返回新 target
 
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[
                 StateConfig(name="A", chat_state="开始"),
                 StateConfig(name="B", chat_state="分支B"),
@@ -292,7 +292,7 @@ class TestDAG话术附加:
         mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[StateConfig(
                 name="A", chat_state="验证",
                 canned_response=CannedResponseConfig(template="请验证身份。", strict=True),
@@ -314,7 +314,7 @@ class TestDAG话术附加:
         mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[StateConfig(
                 name="A", chat_state="问候",
                 canned_response=CannedResponseConfig(template="你好。", strict=False),
@@ -338,7 +338,7 @@ class Test注册节点规则:
     @pytest.mark.asyncio
     async def test_注册所有节点规则(self, mock_agent, mock_journey):
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[
                 StateConfig(name="A", guidelines=[
                     GuidelineConfig(condition="情况X", action="处理X", priority=80),
@@ -396,7 +396,7 @@ class TestBuild整体流程:
         mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
 
         config = JourneyConfig(
-            title="冒烟测试", triggers=["s"], description="d",
+            title="冒烟测试", conditions=["s"], description="d",
             states=[StateConfig(name="A", chat_state="你好")],
             transitions=[],
             global_guidelines=[GuidelineConfig(condition="c", action="a", priority=50)],
@@ -412,7 +412,7 @@ class TestBuild整体流程:
     async def test_缺少StateConfig时抛出ValueError(self, mock_agent, mock_journey):
         # B 在 transitions 中引用，但未在 states 中定义
         config = JourneyConfig(
-            title="T", triggers=["t"], description="d",
+            title="T", conditions=["t"], description="d",
             states=[StateConfig(name="A", chat_state="a")],
             transitions=[TransitionConfig(source="A", target="B")],
         )

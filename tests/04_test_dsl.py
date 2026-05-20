@@ -55,12 +55,12 @@ class TestDSL基本属性:
     def test_触发条件被追加(self):
         config = (
             JourneyDSL("T")
-            .triggers("条件一", "条件二")
-            .triggers("条件三")
+            .conditions("条件一", "条件二")
+            .conditions("条件三")
             .state("A", chat="a")
             .build()
         )
-        assert config.triggers == ["条件一", "条件二", "条件三"]
+        assert config.conditions == ["条件一", "条件二", "条件三"]
 
     def test_描述被设置(self):
         config = (
@@ -220,11 +220,11 @@ class TestDSL边界情况:
 
     def test_build返回独立的JourneyConfig对象(self):
         """多次 build() 应返回独立对象，互不干扰。"""
-        dsl = JourneyDSL("T").triggers("触发").state("A", chat="a")
+        dsl = JourneyDSL("T").conditions("触发").state("A", chat="a")
         c1 = dsl.build()
-        c1.triggers.append("额外触发")
+        c1.conditions.append("额外触发")
         c2 = dsl.build()
-        assert len(c2.triggers) == 1  # c2 不受 c1 的修改影响
+        assert len(c2.conditions) == 1  # c2 不受 c1 的修改影响
 
 
 # ---------------------------------------------------------------------------
@@ -246,9 +246,9 @@ class TestLoader字典加载:
         assert config.states[0].name == "A"
 
     def test_触发条件被正确解析(self):
-        data = {**_最小字典, "triggers": ["触发一", "触发二"]}
+        data = {**_最小字典, "conditions": ["触发一", "触发二"]}
         config = load_journey_dict(data)
-        assert config.triggers == ["触发一", "触发二"]
+        assert config.conditions == ["触发一", "触发二"]
 
     def test_转移被正确解析(self):
         data = {
@@ -318,7 +318,7 @@ class TestLoaderJSON文件:
         data = {
             "title": "JSON流程",
             "description": "从文件加载",
-            "triggers": ["触发"],
+            "conditions": ["触发"],
             "states": [{"name": "A", "chat_state": "你好"}],
             "transitions": [],
         }
@@ -348,7 +348,7 @@ class TestLoaderYAML文件:
         yaml_text = """\
 title: "YAML流程"
 description: "YAML 加载测试"
-triggers:
+conditions:
   - "触发一"
 states:
   - name: verify
@@ -368,7 +368,7 @@ global_guidelines:
 
         config = load_journey(str(path))
         assert config.title == "YAML流程"
-        assert config.triggers == ["触发一"]
+        assert config.conditions == ["触发一"]
         assert config.states[0].canned_response.strict is True
         assert config.global_guidelines[0].priority == 80
 
@@ -376,7 +376,7 @@ global_guidelines:
         """验证 YAML 加载结果与 Python 代码等价（用于回归保证）。"""
         yaml_text = """\
 title: "等价测试"
-triggers: ["go"]
+conditions: ["go"]
 states:
   - name: A
     chat_state: "执行A"

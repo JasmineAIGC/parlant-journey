@@ -77,7 +77,7 @@ _SCHEMA_DESC = """\
 {
   "title": "Journey 标题（字符串）",
   "description": "Journey 整体描述（字符串）",
-  "triggers": ["触发此 Journey 的用户意图或关键词，至少 2 条"],
+  "conditions": ["触发此 Journey 的用户意图或关键词，至少 2 条"],
   "states": [
     {
       "name": "状态唯一 ID（英文小写+下划线）",
@@ -112,7 +112,7 @@ _SYSTEM_PROMPT = f"""\
 3. states 中每个状态必须有 name（英文小写+下划线）和 chat_state（中文）。
 4. transitions 按拓扑顺序排列（确保父节点的出边先于子节点的出边）。
 5. 终止状态（无出边的状态）通常命名为 closing 或 end，作为流程收尾。
-6. title、description、triggers 必须填写，不得为空。
+6. title、description、conditions 必须填写，不得为空。
 7. 规则（guidelines）的 priority 范围 0–100，数值越大越优先。
 """
 

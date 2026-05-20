@@ -130,7 +130,7 @@ class TestJourneyConfig:
     def _最小配置(self) -> JourneyConfig:
         return JourneyConfig(
             title="测试流程",
-            triggers=["开始"],
+            conditions=["开始"],
             description="测试用。",
             states=[StateConfig(name="A", chat_state="你好")],
             transitions=[],
@@ -139,7 +139,7 @@ class TestJourneyConfig:
     def test_最小构造(self):
         cfg = self._最小配置()
         assert cfg.title == "测试流程"
-        assert cfg.triggers == ["开始"]
+        assert cfg.conditions == ["开始"]
         assert cfg.global_guidelines == []
 
     def test_添加全局规则(self):
@@ -157,7 +157,7 @@ class TestJourneyConfig:
     def test_多状态多转移(self):
         cfg = JourneyConfig(
             title="T",
-            triggers=["t"],
+            conditions=["t"],
             description="d",
             states=[StateConfig(name=n) for n in ("A", "B", "C")],
             transitions=[

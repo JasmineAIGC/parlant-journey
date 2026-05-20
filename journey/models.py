@@ -102,7 +102,8 @@ class JourneyConfig:
 
     Args:
         title:             Journey 名称，用于 Parlant 识别。
-        triggers:          触发本 Journey 的条件列表（例如用户意图、关键词）。
+        conditions:        触发本 Journey 的条件列表（例如用户意图、关键词）。
+                           与 Parlant SDK ``agent.create_journey(conditions=...)`` 参数保持一致。
         description:       Journey 的整体描述。
         states:            所有状态的配置，须覆盖 transitions 中出现的每个状态名。
         transitions:       有向图边集合（须按拓扑顺序排列）。
@@ -110,7 +111,7 @@ class JourneyConfig:
     """
 
     title: str
-    triggers: List[str]
+    conditions: List[str]
     description: str
     states: List[StateConfig]
     transitions: List[TransitionConfig]

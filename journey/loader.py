@@ -14,7 +14,7 @@ YAML 格式示例（参见 ``tests/fraud.yaml``）::
 
     title: "处理潜在欺诈交易"
     description: "..."
-    triggers:
+    conditions:
       - "我卡被盗刷了"
     states:
       - name: verify
@@ -124,7 +124,7 @@ def _parse(data: Dict[str, Any]) -> JourneyConfig:
     return JourneyConfig(
         title=data["title"],
         description=data.get("description", ""),
-        triggers=data.get("triggers", []),
+        conditions=data.get("conditions") or data.get("triggers", []),
         states=[_parse_state(s) for s in data["states"]],
         transitions=[_parse_transition(t) for t in data.get("transitions", [])],
         global_guidelines=[

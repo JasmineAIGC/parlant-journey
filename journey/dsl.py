@@ -14,7 +14,7 @@ journey.dsl
 
     config = (
         JourneyDSL("欺诈处理")
-        .triggers("我卡被盗刷了", "可疑交易")
+        .conditions("我卡被盗刷了", "可疑交易")
         .describe("处理欺诈交易的标准流程")
         .state("verify", chat="请验证您的身份",
                canned="为了账户安全，请提供您的姓名和身份证后四位。", strict=True)
@@ -47,7 +47,7 @@ class JourneyDSL:
     调用顺序建议::
 
         JourneyDSL(title)
-          .triggers(...)      # 触发条件
+          .conditions(...)    # 触发条件（对应 Parlant create_journey conditions 参数）
           .describe(...)      # 整体描述
           .state(...)         # 添加状态（可多次调用）
           .rule(...)          # 为某状态添加节点级规则（可多次调用）
@@ -62,7 +62,7 @@ class JourneyDSL:
             title: Journey 名称，用于 Parlant 识别。
         """
         self._title = title
-        self._triggers: List[str] = []
+        self._conditions: List[str] = []
         self._description: str = ""
         self._states: List[StateConfig] = []
         self._states_map: dict = {}         # 状态名 → StateConfig，用于 O(1) 查找
@@ -73,13 +73,13 @@ class JourneyDSL:
     # 基础属性设置
     # ------------------------------------------------------------------
 
-    def triggers(self, *items: str) -> "JourneyDSL":
-        """追加一个或多个触发条件。
+    def conditions(self, *items: str) -> "JourneyDSL":
+        """追加一个或多个触发条件（对应 Parlant ``create_journey(conditions=...)``）。
 
         Args:
             *items: 触发本 Journey 的条件字符串（可传多个）。
         """
-        self._triggers.extend(items)
+        self._conditions.extend(items)
         return self
 
     def describe(self, description: str) -> "JourneyDSL":
@@ -229,7 +229,7 @@ class JourneyDSL:
             raise ValueError("Journey 至少需要定义一个状态，请先调用 .state(...)。")
         return JourneyConfig(
             title=self._title,
-            triggers=list(self._triggers),          # 浅拷贝，隔离后续 DSL 修改
+            conditions=list(self._conditions),          # 浅拷贝，隔离后续 DSL 修改
             description=self._description,
             states=list(self._states),              # 浅拷贝
             transitions=list(self._transitions),    # 浅拷贝

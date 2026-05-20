@@ -68,7 +68,7 @@ _LOAD_DOTENV_PATCH = "tools.llm.client._load_dotenv"
 _VALID_LLM_JSON = {
     "title": "贷款申请流程",
     "description": "引导用户完成贷款申请的全流程",
-    "triggers": ["我想申请贷款", "贷款咨询"],
+    "conditions": ["我想申请贷款", "贷款咨询"],
     "states": [
         {"name": "collect_info",  "description": "收集资料", "chat_state": "请提供您的基本信息"},
         {"name": "credit_review", "description": "信用审核", "chat_state": "正在审核您的信用"},

@@ -73,7 +73,7 @@ class JourneyBuilder:
         self._journey = await self._agent.create_journey(
             title=self._config.title,
             description=self._config.description,
-            conditions=self._config.triggers,
+            conditions=self._config.conditions,
         )
 
     # ------------------------------------------------------------------

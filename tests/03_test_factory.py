@@ -46,7 +46,7 @@ def _简单配置(title: str = "测试") -> JourneyConfig:
     """返回最小可用的测试配置。"""
     return JourneyConfig(
         title=title,
-        triggers=["go"],
+        conditions=["go"],
         description="工厂测试用。",
         states=[StateConfig(name="A", chat_state="执行 A")],
         transitions=[],
