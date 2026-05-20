@@ -506,7 +506,7 @@ class TestLLMConfig构建:
         monkeypatch.setenv("LLM_API_KEY", "sk-from-env")
         monkeypatch.setenv("LLM_MODEL", "gpt-4o")
         monkeypatch.setenv("LLM_BASE_URL", "http://my-server/v1")
-        for k in ["QWEN3_API_KEY", "QWEN3_MODEL"]:
+        for k in ["QWEN3_API_KEY", "QWEN3_MODEL", "QWEN3_BASE_URL"]:
             monkeypatch.delenv(k, raising=False)
 
         with patch(_LOAD_DOTENV_PATCH):
