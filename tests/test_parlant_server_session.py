@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from types import SimpleNamespace
@@ -10,9 +11,10 @@ from tools.parlant_server.session import run_conversation
 
 
 class _FakeSessionModuleInstance:
-    def __init__(self, events, wait_exc=None):
+    def __init__(self, events, wait_exc=None, wait_delay=0.0):
         self._events = events
         self._wait_exc = wait_exc
+        self._wait_delay = wait_delay
         self.wait_calls = []
 
     async def create(self, **kwargs):
@@ -23,6 +25,8 @@ class _FakeSessionModuleInstance:
 
     async def wait_for_more_events(self, **kwargs):
         self.wait_calls.append(kwargs)
+        if self._wait_delay > 0:
+            await asyncio.sleep(self._wait_delay)
         if self._wait_exc is not None:
             raise self._wait_exc
         return None
@@ -31,7 +35,13 @@ class _FakeSessionModuleInstance:
         return self._events
 
 
-def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events, *, wait_exc=None):
+def _install_parlant_core_stubs(
+    monkeypatch: pytest.MonkeyPatch,
+    events,
+    *,
+    wait_exc=None,
+    wait_delay=0.0,
+):
     class SessionModule:
         pass
 
@@ -70,7 +80,11 @@ def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events, *, wait
     monkeypatch.setitem(sys.modules, "parlant.core.sessions", fake_mod_sessions)
     monkeypatch.setitem(sys.modules, "parlant.core.customers", fake_mod_customers)
 
-    fake_instance = _FakeSessionModuleInstance(events=events, wait_exc=wait_exc)
+    fake_instance = _FakeSessionModuleInstance(
+        events=events,
+        wait_exc=wait_exc,
+        wait_delay=wait_delay,
+    )
     fake_ctx = SimpleNamespace(
         server=SimpleNamespace(_container={SessionModule: fake_instance})
     )
@@ -95,6 +109,24 @@ async def test_run_conversation_reads_agent_message(monkeypatch: pytest.MonkeyPa
     assert wait_kwargs["kinds"] == ["message"]
     assert wait_kwargs["source"] == "ai_agent"
     assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)
+
+
+@pytest.mark.asyncio
+async def test_run_conversation_enforces_hard_timeout_when_wait_hangs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, agent, fake_session_module = _install_parlant_core_stubs(
+        monkeypatch,
+        events=[],
+        wait_delay=0.2,
+    )
+
+    replies = []
+    async for _user, reply in run_conversation(ctx, agent, ["你好"], timeout=0.05):
+        replies.append(reply)
+
+    assert replies == [""]
+    assert fake_session_module.wait_calls
 
 
 @pytest.mark.asyncio

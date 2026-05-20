@@ -54,12 +54,15 @@ async def run_conversation(
         next_offset = evt.offset + 1
 
         try:
-            await session_module.wait_for_more_events(
-                session_id=session.id,
-                min_offset=next_offset,
-                kinds=[EventKind.MESSAGE],
-                source=EventSource.AI_AGENT,
-                timeout=Timeout(timeout),
+            await asyncio.wait_for(
+                session_module.wait_for_more_events(
+                    session_id=session.id,
+                    min_offset=next_offset,
+                    kinds=[EventKind.MESSAGE],
+                    source=EventSource.AI_AGENT,
+                    timeout=Timeout(timeout),
+                ),
+                timeout=timeout,
             )
         except (asyncio.TimeoutError, TimeoutError):
             yield user_msg, ""
