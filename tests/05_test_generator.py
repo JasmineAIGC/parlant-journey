@@ -44,8 +44,10 @@ from tools.llm.client import (
     DEFAULT_MODEL,
     LLMClient,
     LLMConfig,
+    bridge_parlant_litellm_env,
     _patch_litellm_embedding_encoding_format,
     _build_thinking_extra_body,
+    _infer_embedding_dimensions,
     _is_thinking_model,
     _needs_openai_prefix,
 )
@@ -334,6 +336,89 @@ class TestEmbeddingPatch:
         assert result == "cloud-ok"
         original.assert_awaited_once()
         assert original.await_args.kwargs["encoding_format"] == "float"
+
+
+# ---------------------------------------------------------------------------
+# Embedding 向量维度推断 & bridge_parlant_litellm_env 维度自动设置
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingDimensionsBridge:
+    """验证 _infer_embedding_dimensions() 和 bridge_parlant_litellm_env() 的维度自动推断。
+
+    这是修复 nano_vectordb np.vstack 维度不匹配崩溃（1536 vs 4096）的核心逻辑。
+    """
+
+    def test_qwen3_embedding_8b推断为4096(self):
+        assert _infer_embedding_dimensions("Qwen3-Embedding-8B") == "4096"
+
+    def test_qwen3_embedding_8b含前缀推断为4096(self):
+        assert _infer_embedding_dimensions("openai/Qwen3-Embedding-8B") == "4096"
+
+    def test_qwen3_embedding泛名推断为4096(self):
+        assert _infer_embedding_dimensions("Qwen3-Embedding") == "4096"
+
+    def test_text_embedding_ada_002推断为1536(self):
+        assert _infer_embedding_dimensions("text-embedding-ada-002") == "1536"
+
+    def test_未知模型返回None(self):
+        assert _infer_embedding_dimensions("my-custom-embed-model") is None
+
+    def test_bridge_未配置维度时自动推断4096(self, monkeypatch):
+        """EMBEDDING_MODEL=Qwen3-Embedding-8B 且未设置维度时，bridge 应自动推断并设置 4096。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        monkeypatch.setenv("EMBEDDING_MODEL", "Qwen3-Embedding-8B")
+        # 清除所有可能干扰的维度变量
+        for key in ("EMBEDDING_DIMENSIONS", "QWEN3_EMBEDDING_DIMENSIONS",
+                    "LLM_EMBEDDING_DIMENSIONS", "LITELLM_EMBEDDING_DIMENSIONS"):
+            monkeypatch.delenv(key, raising=False)
+        # 清除可能已有的 LITELLM_EMBEDDING_MODEL_NAME，让 bridge 重新设置
+        monkeypatch.delenv("LITELLM_EMBEDDING_MODEL_NAME", raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        assert resolved.get("LITELLM_EMBEDDING_DIMENSIONS") == "4096"
+        assert os.environ["LITELLM_EMBEDDING_DIMENSIONS"] == "4096"
+
+    def test_bridge_显式维度配置优先于自动推断(self, monkeypatch):
+        """用户已设置 EMBEDDING_DIMENSIONS 时，bridge 必须使用用户值，不得覆盖。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        monkeypatch.setenv("EMBEDDING_MODEL", "Qwen3-Embedding-8B")
+        monkeypatch.setenv("EMBEDDING_DIMENSIONS", "2048")   # 用户强制指定
+        monkeypatch.delenv("LITELLM_EMBEDDING_DIMENSIONS", raising=False)
+        monkeypatch.delenv("LITELLM_EMBEDDING_MODEL_NAME", raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        # 用户显式配置的 2048 必须保留，不能被自动推断的 4096 覆盖
+        assert resolved.get("LITELLM_EMBEDDING_DIMENSIONS") == "2048"
+        assert os.environ["LITELLM_EMBEDDING_DIMENSIONS"] == "2048"
+
+    def test_bridge_无embedding模型时不推断维度(self, monkeypatch):
+        """未设置 EMBEDDING_MODEL 时，不应自动设置 LITELLM_EMBEDDING_DIMENSIONS。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        for key in ("EMBEDDING_MODEL", "QWEN3_EMBEDDING_MODEL", "LLM_EMBEDDING_MODEL",
+                    "EMBEDDING_DIMENSIONS", "LITELLM_EMBEDDING_DIMENSIONS",
+                    "LITELLM_EMBEDDING_MODEL_NAME"):
+            monkeypatch.delenv(key, raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        assert "LITELLM_EMBEDDING_DIMENSIONS" not in resolved
 
 
 # ---------------------------------------------------------------------------

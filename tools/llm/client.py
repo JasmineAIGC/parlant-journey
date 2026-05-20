@@ -121,6 +121,36 @@ def _build_thinking_extra_body(
     return {"extra_body": {"enable_thinking": resolved_thinking}}
 
 
+def _infer_embedding_dimensions(model_name: str) -> Optional[str]:
+    """根据常见 Embedding 模型名推断向量维度，仅在用户未显式配置时使用。
+
+    Returns:
+        推断出的维度字符串（如 ``"4096"``），无法推断时返回 ``None``。
+    """
+    model = model_name.lower()
+    # 剥除 litellm 路由前缀（如 "openai/Qwen3-Embedding-8B" → "qwen3-embedding-8b"）
+    for prefix in _LITELLM_PROVIDER_PREFIXES:
+        if model.startswith(prefix):
+            model = model[len(prefix):]
+            break
+
+    # 已知模型维度表（子串匹配，越具体的写在前面）
+    _KNOWN_DIMS: tuple = (
+        ("qwen3-embedding-8b",         "4096"),
+        ("qwen3-embedding",            "4096"),
+        ("text-embedding-3-large",     "3072"),
+        ("text-embedding-3-small",     "1536"),
+        ("text-embedding-ada-002",     "1536"),
+        ("jina-embeddings-v2-base-en", "768"),
+        ("bge-large-zh-v1.5",          "1024"),
+        ("bge-large-zh",               "1024"),
+    )
+    for marker, dims in _KNOWN_DIMS:
+        if marker in model:
+            return dims
+    return None
+
+
 @dataclass
 class _PatchedEmbeddingResponse:
     """最小化的 embedding 响应，满足 Parlant 对 ``response.data[i]["embedding"]`` 的访问需求。"""
@@ -280,20 +310,35 @@ def bridge_parlant_litellm_env() -> dict:
     # Embedding 模型：若未设置 LITELLM_EMBEDDING_MODEL_NAME，Parlant 默认使用
     # jinaai/jina-embeddings-v2-base-en（需从 HuggingFace 下载）。
     # 内网/离线环境下必须通过 EMBEDDING_MODEL 指定自定义 Embedding 模型。
+    _resolved_emb_model: Optional[str] = None
     if emb_model := os.environ.get("LITELLM_EMBEDDING_MODEL_NAME") or _first_env([
         "EMBEDDING_MODEL", "QWEN3_EMBEDDING_MODEL", "LLM_EMBEDDING_MODEL",
     ]):
         if _needs_openai_prefix(emb_model):
             emb_model = f"openai/{emb_model}"
         os.environ.setdefault("LITELLM_EMBEDDING_MODEL_NAME", emb_model)
-        resolved["LITELLM_EMBEDDING_MODEL_NAME"] = os.environ["LITELLM_EMBEDDING_MODEL_NAME"]
+        _resolved_emb_model = os.environ["LITELLM_EMBEDDING_MODEL_NAME"]
+        resolved["LITELLM_EMBEDDING_MODEL_NAME"] = _resolved_emb_model
 
-    # Embedding 向量维度（Parlant 默认 1536，按实际模型设置）
+    # Embedding 向量维度（Parlant 默认 1536，但 Qwen3-Embedding-8B 等模型输出 4096 维）。
+    # 必须与 Embedding 模型实际输出维度完全一致，否则 Parlant 内部的 nano_vectordb 会因
+    # np.vstack 维度不匹配而崩溃（ValueError: array at index 0 has size X, index 1 has size Y）。
     if emb_dims := os.environ.get("LITELLM_EMBEDDING_DIMENSIONS") or _first_env([
         "EMBEDDING_DIMENSIONS", "QWEN3_EMBEDDING_DIMENSIONS", "LLM_EMBEDDING_DIMENSIONS",
     ]):
         os.environ.setdefault("LITELLM_EMBEDDING_DIMENSIONS", emb_dims)
         resolved["LITELLM_EMBEDDING_DIMENSIONS"] = os.environ["LITELLM_EMBEDDING_DIMENSIONS"]
+    elif _resolved_emb_model:
+        # 用户未显式配置维度时，对已知模型做自动推断，避免因 Parlant 默认值 1536
+        # 与实际模型输出不一致导致运行时崩溃。
+        if _inferred := _infer_embedding_dimensions(_resolved_emb_model):
+            os.environ.setdefault("LITELLM_EMBEDDING_DIMENSIONS", _inferred)
+            resolved["LITELLM_EMBEDDING_DIMENSIONS"] = os.environ["LITELLM_EMBEDDING_DIMENSIONS"]
+            logger.debug(
+                "[bridge_parlant_litellm_env] 自动推断 LITELLM_EMBEDDING_DIMENSIONS=%s"
+                " (model=%s)",
+                _inferred, _resolved_emb_model,
+            )
 
     # 修补 litellm.aembedding：主路径使用 OpenAI SDK，回退路径修复 encoding_format=None
     _patch_litellm_embedding_encoding_format()
