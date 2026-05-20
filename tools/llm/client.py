@@ -135,7 +135,7 @@ def _infer_embedding_dimensions(model_name: str) -> Optional[str]:
             break
 
     # 已知模型维度表（子串匹配，越具体的写在前面）
-    _KNOWN_DIMS: tuple = (
+    _KNOWN_MODEL_DIMENSIONS: tuple = (
         ("qwen3-embedding-8b",         "4096"),
         ("qwen3-embedding",            "4096"),
         ("text-embedding-3-large",     "3072"),
@@ -145,7 +145,7 @@ def _infer_embedding_dimensions(model_name: str) -> Optional[str]:
         ("bge-large-zh-v1.5",          "1024"),
         ("bge-large-zh",               "1024"),
     )
-    for marker, dims in _KNOWN_DIMS:
+    for marker, dims in _KNOWN_MODEL_DIMENSIONS:
         if marker in model:
             return dims
     return None
