@@ -55,8 +55,8 @@ async def run_conversation(
         await session_module.wait_for_more_events(
             session_id=session.id,
             min_offset=next_offset,
-            kinds=[EventKind.MESSAGE],
-            source=EventSource.AI_AGENT,
+            kinds=None,
+            source=None,
             timeout=Timeout(timeout),
         )
 
