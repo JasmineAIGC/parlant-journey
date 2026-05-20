@@ -45,7 +45,7 @@ states:
         action: "根据知识库内容明确告知是否符合条件，符合时推荐最优办理方式"
         priority: 85
       - condition: "用户主动要求转接人工"
-        action: "固定话术：您好，非常抱歉。您咨询的内容无法即时解答，即将为您转接人工客服，请您耐心等待。"
+        action: "执行 docs/rules.md 规定的固定话术（业务要求不可修改）：您好，非常抱歉。您咨询的内容无法即时解答，即将为您转接人工客服，请您耐心等待。"
         priority: 82
   - name: structure_answer
     description: "整理多知识点输出结构"
