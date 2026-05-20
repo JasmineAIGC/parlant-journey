@@ -2,15 +2,15 @@
 tools.embedding
 ~~~~~~~~~~~~~~~
 
-OpenAI 兼容 Embedding 客户端。
+OpenAI 兼容 Embedding 客户端及适配层。
 
 快速导入::
 
-    from tools.embedding import OpenAILikeEmbedding
+    from tools.embedding import OpenAIEmbeddingClient, OpenAILikeEmbedding
 
-    embed = OpenAILikeEmbedding.from_env()
-    vectors = embed._get_text_embeddings(["文本一", "文本二"])
+    embed = OpenAIEmbeddingClient.from_env()
+    vectors = embed.embed_texts(["文本一", "文本二"])
 """
-from .client import OpenAILikeEmbedding
+from .client import OpenAIEmbeddingClient, OpenAIEmbeddingConfig, OpenAILikeEmbedding
 
-__all__ = ["OpenAILikeEmbedding"]
+__all__ = ["OpenAIEmbeddingClient", "OpenAIEmbeddingConfig", "OpenAILikeEmbedding"]

@@ -2,10 +2,7 @@
 #
 # 使用方式（Python）：
 #   from journey import load_journey
-#   config = load_journey("tests/fraud.yaml")
-#
-# 此文件与 tests/00_fraud_demo.py 中的 Python 硬编码配置等价，
-# 展示了"零 Python 代码"完成场景迁移的能力。
+#   config = load_journey("demos/fraud/fraud.yaml")
 
 title: "处理潜在欺诈交易"
 description: "引导客户完成欺诈交易的核实与处置，覆盖：身份验证、信息采集、风险评估和针对性处置，确保流程合规、可审计。"
@@ -18,7 +15,6 @@ conditions:
   - "怀疑被骗"
 
 states:
-  # 1. 身份验证
   - name: identity_verify
     description: "完成用户身份验证（KYC）"
     chat_state: "严格进行身份验证，要求用户提供姓名、身份证后四位或银行卡后四位。验证失败时给予明确提示，最多允许 3 次重试。"
@@ -26,17 +22,14 @@ states:
       template: "为了您的账户安全，我需要先验证您的身份。请提供您的姓名、身份证后四位或银行卡后四位。"
       strict: true
 
-  # 2. 信息采集
   - name: collect_info
     description: "收集可疑交易的关键信息"
     chat_state: "引导用户详细描述可疑交易：发生时间、金额、商户名称、是否本人操作。记录所有细节，为后续风险评估做准备。"
 
-  # 3. 风险评估
   - name: risk_assess
     description: "评估交易风险等级"
     chat_state: "根据已收集的交易信息评估风险等级。在实际系统中此状态会调用风险评估工具；演示模式下请告知用户正在评估，并给出风险评级（HIGH / MEDIUM / LOW）。"
 
-  # 4a. 高风险处置
   - name: high_risk
     description: "执行高风险处置措施"
     chat_state: "告知客户当前风险极高，立即引导：1) 冻结账户；2) 申请挂失银行卡；3) 拨打紧急客服热线。"
@@ -48,17 +41,14 @@ states:
         action: "再次强调风险，说明延迟操作的潜在损失"
         priority: 85
 
-  # 4b. 中风险处置
   - name: medium_risk
     description: "执行中风险处置措施"
     chat_state: "建议用户：1) 修改账户密码；2) 设置单日交易限额；3) 提交异议申诉，银行将在 3 个工作日内处理。"
 
-  # 4c. 低风险处置
   - name: low_risk
     description: "执行低风险处置措施"
     chat_state: "告知用户当前交易风险较低，未发现明确欺诈迹象。建议保持警惕，避免点击陌生链接或向陌生人透露验证码。"
 
-  # 5. 流程收尾
   - name: closing
     description: "完成流程收尾与客户确认"
     chat_state: "总结本次处置结果，确认用户已完成所需操作，感谢客户的配合，并告知后续跟进方式。邀请客户对本次服务进行评价。"

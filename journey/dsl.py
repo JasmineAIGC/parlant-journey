@@ -122,6 +122,10 @@ class JourneyDSL:
             strict:           True（默认）→ STRICT 模式，完全锁定输出；
                               False → FLUID 模式，允许 Agent 在话术基础上调整。
         """
+        if name in self._states_map:
+            raise ValueError(f"状态 '{name}' 已存在，请使用新的状态名。")
+        if chat is not None and tool is not None:
+            raise ValueError("chat 与 tool 互斥，单个状态只能配置一种。")
         canned_cfg = CannedResponseConfig(template=canned, strict=strict) if canned else None
         s = StateConfig(
             name=name,

@@ -75,18 +75,22 @@ parlant-journey/
 │   ├── builder.py             # 翻译层（JourneyBuilder，内部私有）
 │   └── factory.py             # 公开入口层（create_journey / register_journeys）
 │
-├── tests/                     # 测试 + 演示（数字前缀区分类型）
-│   ├── 00_fraud_demo.py       # 完整欺诈处理对话演示（JourneySimulator + LLMClient）
+├── tests/                     # 单元测试与集成测试
 │   ├── 01_test_models.py      # 数据模型单元测试
 │   ├── 02_test_builder.py     # 构建器测试（mock Parlant SDK）
-│   └── 03_test_factory.py     # 工厂函数测试
+│   ├── 03_test_factory.py     # 工厂函数测试
+│   └── test_demo_fraud.py     # 欺诈演示集成测试包装
 │
-├── third_party/
-│   ├── .env                   # LLM / Embedding 配置（API Key、Base URL、模型名）
-│   └── model_client/          # LLM + Embedding 客户端（demo 演示依赖）
-│       ├── api/llm.py         # LLMClient — 基于 LiteLLM 的异步 LLM 调用
-│       ├── api/embedding.py   # OpenAILikeEmbedding — OpenAI 兼容 Embedding
-│       └── local/embedding.py # SentenceTransformerEmbedding — 本地推理
+├── demos/
+│   └── fraud/
+│       ├── demo_fraud.py      # 完整欺诈处理对话演示
+│       ├── fraud.yaml         # 演示 YAML 配置
+│       └── fraud.json         # 演示 JSON 配置
+│
+├── tools/
+│   ├── llm/                   # 通用 LiteLLM 客户端与环境适配
+│   ├── embedding/             # 通用 Embedding 客户端与 LlamaIndex 适配层
+│   └── parlant_server/        # 无 UI 的 Parlant Server 程序化上下文
 │
 ├── docs/
 │   ├── ARCHITECTURE.md        # ← 本文档（权威技术方案）
@@ -278,7 +282,7 @@ async with p.Server(...) as server:
     journey = await create_journey(agent, config)
 ```
 
-完整示例见 [`tests/00_fraud_demo.py`](../tests/00_fraud_demo.py)（含 LLMClient 驱动的完整对话演示）。
+完整示例见 [`demos/fraud/demo_fraud.py`](../demos/fraud/demo_fraud.py)。
 
 ### 批量注册
 
@@ -310,7 +314,7 @@ dependencies = [
 
 | 包 | 用途 |
 |----|------|
-| `litellm` | LLMClient 底层（third_party/model_client/api/llm.py） |
+| `litellm` | LLMClient 底层 |
 | `openai>=1.0.0` | Embedding 客户端底层 |
 | `python-dotenv` | 读取 .env 配置文件 |
 | `pytest>=7` + `pytest-asyncio>=0.23` | 测试框架 |
@@ -331,15 +335,14 @@ pytest tests/01_test_models.py tests/02_test_builder.py tests/03_test_factory.py
 ### 完整对话演示（需要 LLM 服务）
 
 ```bash
-# 配置 third_party/.env（QWEN3_API_KEY / QWEN3_BASE_URL / QWEN3_MODEL）
-python tests/00_fraud_demo.py
+# 配置项目根目录 .env（QWEN3_API_KEY / QWEN3_BASE_URL / QWEN3_MODEL）
+python demos/fraud/demo_fraud.py
 ```
 
-`tests/00_fraud_demo.py` 内置 `JourneySimulator`，使用 LLMClient 驱动完整对话：
-- 解析 `JourneyConfig` 中的状态 DAG
-- 在每个 chat_state 调用 LLM 生成 Agent 回复
-- 用 LLM 判断转移条件是否满足并自动推进状态
-- 无需 Parlant Server，可独立运行
+`demos/fraud/demo_fraud.py` 使用 `ParlantServerContext`、`create_journey()` 和 `run_conversation()` 驱动完整对话：
+- 从同目录配置文件加载 Journey
+- 在无 UI 的 Parlant Server 中注册流程
+- 按脚本消息驱动多轮真实对话
 
 ---
 
@@ -349,4 +352,4 @@ python tests/00_fraud_demo.py
 |------|------|
 | [`docs/ARCHITECTURE_Version2.md`](ARCHITECTURE_Version2.md) | 架构设计草稿（数据流、分层设计） |
 | [`docs/parlant-journey.md`](parlant-journey.md) | Guidelines & Canned Responses 功能设计 |
-| [`tests/00_fraud_demo.py`](../tests/00_fraud_demo.py) | 欺诈处理完整对话演示（三层控制 + LLMClient） |
+| [`demos/fraud/demo_fraud.py`](../demos/fraud/demo_fraud.py) | 欺诈处理完整对话演示（三层控制 + Parlant Server） |

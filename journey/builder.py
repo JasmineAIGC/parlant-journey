@@ -24,6 +24,7 @@ class JourneyBuilder:
         self._agent = agent
         self._config = config
         self._journey: Optional[p.Journey] = None
+        self._validate_config()
 
         # 状态名 → Parlant CannedResponse 对象（步骤②预创建）
         self._canrep_map: Dict[str, Any] = {}
@@ -108,7 +109,7 @@ class JourneyBuilder:
         all_state_names = {s.name for s in self._config.states}
 
         # 根节点：从未出现在 target 中的状态（即无入边的状态）
-        roots = all_state_names - all_targets
+        roots = [state.name for state in self._config.states if state.name in (all_state_names - all_targets)]
         logger.debug("[JourneyBuilder] 根节点  roots=%s", sorted(roots))
 
         # ── 从 journey.initial_state 创建所有根状态 ──────────────────
@@ -238,3 +239,9 @@ class JourneyBuilder:
             )
 
         return kwargs
+
+    def _validate_config(self) -> None:
+        state_names = [state.name for state in self._config.states]
+        duplicated = sorted({name for name in state_names if state_names.count(name) > 1})
+        if duplicated:
+            raise ValueError(f"JourneyConfig.states 中存在重复状态名：{', '.join(duplicated)}")

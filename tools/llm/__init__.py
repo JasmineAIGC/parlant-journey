@@ -14,6 +14,7 @@ tools.llm
 from .client import (
     LLMClient,
     LLMConfig,
+    prepare_litellm_environment,
     bridge_parlant_litellm_env,
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,
@@ -23,6 +24,7 @@ from .client import (
 __all__ = [
     "LLMClient",
     "LLMConfig",
+    "prepare_litellm_environment",
     "bridge_parlant_litellm_env",
     "DEFAULT_MODEL",
     "DEFAULT_TEMPERATURE",

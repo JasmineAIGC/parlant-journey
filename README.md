@@ -29,7 +29,7 @@ async with p.Server(...) as server:
 
     config = JourneyConfig(
         title="欺诈处理",
-        triggers=["我卡被盗刷了", "可疑交易"],
+        conditions=["我卡被盗刷了", "可疑交易"],
         description="处理欺诈交易的标准流程",
         states=[
             StateConfig(
@@ -63,14 +63,14 @@ async with p.Server(...) as server:
 
 ## 完整对话演示
 
-无需 Parlant Server，直接运行欺诈处理全流程对话演示（使用 LLMClient 驱动）：
+可直接运行独立的欺诈处理全流程演示：
 
 ```bash
-# 1. 在 third_party/.env 中配置 LLM 服务
+# 1. 在项目根目录 .env 中配置 LLM 服务
 # 2. 安装依赖
 pip install -r requirements.txt
 # 3. 运行演示
-python tests/00_fraud_demo.py
+python demos/fraud/demo_fraud.py
 ```
 
 ## 目录说明
@@ -78,18 +78,17 @@ python tests/00_fraud_demo.py
 ```
 journey/              核心包（Python import: from journey import ...）
 tests/
-  00_fraud_demo.py    完整欺诈处理对话演示（JourneySimulator + LLMClient）
   01_test_models.py   数据模型单元测试
   02_test_builder.py  构建器单元测试（mock SDK）
   03_test_factory.py  工厂函数单元测试
-third_party/          LLM / Embedding 客户端（model_client）
+demos/fraud/          独立欺诈处理演示及其配置文件
 docs/ARCHITECTURE.md  完整技术方案（权威文档）
 ```
 
 ## 文档
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 完整技术方案（推荐阅读）
-- [tests/00_fraud_demo.py](tests/00_fraud_demo.py) — 欺诈处理完整对话演示
+- [demos/fraud/demo_fraud.py](demos/fraud/demo_fraud.py) — 欺诈处理完整对话演示
 
 ## 测试
 

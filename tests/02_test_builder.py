@@ -200,6 +200,28 @@ class TestDAG线性拓扑:
 
         assert state_A.transition_to.call_args.kwargs["condition"] == "用户已确认"
 
+    @pytest.mark.asyncio
+    async def test_多根节点保持states中的声明顺序(self, mock_agent, mock_journey):
+        trans_B, state_B = _trans("B")
+        trans_A, state_A = _trans("A")
+        mock_journey.initial_state.transition_to = AsyncMock(side_effect=[trans_B, trans_A])
+
+        config = JourneyConfig(
+            title="T", conditions=["t"], description="d",
+            states=[
+                StateConfig(name="B", chat_state="先处理B"),
+                StateConfig(name="A", chat_state="再处理A"),
+            ],
+            transitions=[],
+        )
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        await builder._build_dag()
+
+        calls = mock_journey.initial_state.transition_to.call_args_list
+        assert [call.kwargs["chat_state"] for call in calls] == ["先处理B", "再处理A"]
+        assert builder._state_obj_map == {"B": state_B, "A": state_A}
+
 
 # ---------------------------------------------------------------------------
 # _build_dag — 分支拓扑
@@ -425,6 +447,15 @@ class TestBuild整体流程:
         with pytest.raises(ValueError, match="B"):
             await builder._build_dag()
 
+    def test_重复状态名抛出ValueError(self, mock_agent):
+        config = JourneyConfig(
+            title="T", conditions=["t"], description="d",
+            states=[StateConfig(name="A"), StateConfig(name="A")],
+            transitions=[],
+        )
+        with pytest.raises(ValueError, match="重复状态名"):
+            JourneyBuilder(mock_agent, config)
+
 
 # ---------------------------------------------------------------------------
 # 直接运行支持：python tests/02_test_builder.py
@@ -432,4 +463,3 @@ class TestBuild整体流程:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
