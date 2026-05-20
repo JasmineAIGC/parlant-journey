@@ -6,7 +6,11 @@ Parlant 多轮对话辅助函数。
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any, AsyncGenerator, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 async def run_conversation(
@@ -52,13 +56,25 @@ async def run_conversation(
         )
         next_offset = evt.offset + 1
 
-        await session_module.wait_for_more_events(
-            session_id=session.id,
-            min_offset=next_offset,
-            kinds=[EventKind.MESSAGE],
-            source=EventSource.AI_AGENT,
-            timeout=Timeout(timeout),
-        )
+        try:
+            await asyncio.wait_for(
+                session_module.wait_for_more_events(
+                    session_id=session.id,
+                    min_offset=next_offset,
+                    kinds=[EventKind.MESSAGE],
+                    source=EventSource.AI_AGENT,
+                    timeout=Timeout(timeout),
+                ),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            logger.warning(
+                "[run_conversation] 等待 Agent 回复超时  session_id=%s  timeout=%.2fs",
+                session.id,
+                timeout,
+            )
+            yield user_msg, ""
+            continue
 
         agent_events = await session_module.find_events(
             session_id=session.id,

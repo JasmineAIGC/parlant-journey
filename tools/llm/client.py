@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
+from tools._env import first_env as _first_env, load_dotenv_candidates
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -41,19 +43,6 @@ _LITELLM_PROVIDER_PREFIXES = (
 """LiteLLM 已知的提供商前缀，用于判断模型名是否已含路由前缀。"""
 
 
-# ---------------------------------------------------------------------------
-# 内部工具函数
-# ---------------------------------------------------------------------------
-
-def _first_env(keys: list, default: Optional[str] = None) -> Optional[str]:
-    """按优先级读取环境变量，返回首个非空值。"""
-    for key in keys:
-        value = os.getenv(key)
-        if value:
-            return value
-    return default
-
-
 def _load_dotenv() -> None:
     """尝试加载 .env 文件。
 
@@ -62,33 +51,7 @@ def _load_dotenv() -> None:
       2. 当前工作目录的 ``third_party/.env``（开发期目录结构）
       3. 脚本调用位置向上逐级查找（最多 5 层），直至根目录
     """
-    try:
-        from dotenv import load_dotenv  # type: ignore[import]
-    except ImportError:
-        return
-
-    cwd = os.getcwd()
-    if os.path.exists(os.path.join(cwd, ".env")):
-        load_dotenv(os.path.join(cwd, ".env"))
-        return
-
-    third_party_env = os.path.join(cwd, "third_party", ".env")
-    if os.path.exists(third_party_env):
-        load_dotenv(third_party_env)
-        return
-
-    # 向上逐级查找
-    current = os.path.abspath(__file__)
-    for _ in range(5):
-        current = os.path.dirname(current)
-        candidate = os.path.join(current, ".env")
-        if os.path.exists(candidate):
-            load_dotenv(candidate)
-            return
-        tp_candidate = os.path.join(current, "third_party", ".env")
-        if os.path.exists(tp_candidate):
-            load_dotenv(tp_candidate)
-            return
+    load_dotenv_candidates(start_path=__file__)
 
 
 def _is_thinking_model(model: str) -> bool:
@@ -245,8 +208,8 @@ def _patch_litellm_embedding_encoding_format() -> None:
         logger.debug("[bridge_parlant_litellm_env] embedding patch 失败（非致命）: %s", exc)
 
 
-def bridge_parlant_litellm_env() -> dict:
-    """将 .env 中的 LLM/Embedding 配置桥接到 Parlant LiteLLM 所需环境变量。
+def prepare_litellm_environment() -> dict:
+    """将 .env 中的 LLM/Embedding 配置桥接到 LiteLLM 所需环境变量。
 
     读取 QWEN3_*/LLM_*/OPENAI_* 环境变量，写入 LITELLM_PROVIDER_* 系列变量，
     并自动推断 LITELLM_EMBEDDING_DIMENSIONS（对已知 Embedding 模型）。
@@ -315,6 +278,11 @@ def bridge_parlant_litellm_env() -> dict:
     _patch_litellm_embedding_encoding_format()
 
     return resolved
+
+
+def bridge_parlant_litellm_env() -> dict:
+    """兼容旧名称：为 Parlant 准备 LiteLLM 环境变量。"""
+    return prepare_litellm_environment()
 
 
 def _configure_litellm(model_name: str) -> None:

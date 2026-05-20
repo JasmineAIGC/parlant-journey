@@ -10,7 +10,7 @@ journey.loader
   - YAML — 需要安装 pyyaml（``pip install pyyaml``），人类可读性更佳，
     适合手动维护、含大量中文的配置文件。
 
-YAML 格式示例（参见 ``tests/fraud.yaml``）::
+YAML 格式示例（参见 ``demos/fraud/fraud.yaml``）::
 
     title: "处理潜在欺诈交易"
     description: "..."
@@ -160,6 +160,7 @@ def _parse_state(data: Dict[str, Any]) -> StateConfig:
         name=data["name"],
         description=data.get("description", ""),
         chat_state=data.get("chat_state"),
+        tool_state=data.get("tool_state"),
         tool_instruction=data.get("tool_instruction"),
         guidelines=[_parse_guideline(g) for g in data.get("guidelines", [])],
         canned_response=canned,

@@ -2,22 +2,15 @@
 tools.embedding.client
 ~~~~~~~~~~~~~~~~~~~~~~
 
-OpenAI 兼容 Embedding 客户端 — 通过 API 调用远程 Embedding 服务。
-
-使用 ``openai.AsyncOpenAI`` SDK 调用 vLLM / OpenAI 兼容的 ``/v1/embeddings`` 端点，
-同时支持同步和异步两种调用方式，以及私有部署网关的 ``access-key`` 请求头。
-
-继承自 LlamaIndex ``BaseEmbedding``，与知识库构建阶段使用完全相同的 Embedding 接口，
-保证向量维度一致。
-
-依赖::
-
-    pip install llama-index openai
+通用 OpenAI 兼容 Embedding 客户端，以及可选的 LlamaIndex 适配层。
 """
 from __future__ import annotations
 
-import os
+import math
+from dataclasses import dataclass
 from typing import Any, List, Optional
+
+from tools._env import first_env, load_dotenv_candidates
 
 try:
     from pydantic import PrivateAttr
@@ -27,15 +20,6 @@ except ImportError:
     _LLAMA_AVAILABLE = False
     _BaseEmbedding = object  # type: ignore[assignment,misc]
     PrivateAttr = lambda **kw: None  # type: ignore[assignment]  # noqa: E731
-
-
-def _first_env(keys: list, default: Optional[str] = None) -> Optional[str]:
-    """按优先级读取环境变量，返回首个非空值。"""
-    for key in keys:
-        value = os.getenv(key)
-        if value:
-            return value
-    return default
 
 
 def _make_openai_clients(
@@ -48,10 +32,10 @@ def _make_openai_clients(
         from openai import OpenAI, AsyncOpenAI  # type: ignore[import]
     except ImportError as exc:
         raise ImportError(
-            "OpenAILikeEmbedding 需要安装 openai SDK：pip install openai>=1.0.0"
+            "Embedding 客户端需要安装 openai SDK：pip install openai>=1.0.0"
         ) from exc
     headers = {"access-key": access_key} if access_key else {}
-    kw: dict = dict(
+    kw: dict[str, Any] = dict(
         api_key=api_key or "EMPTY",
         base_url=base_url,
         default_headers=headers or None,
@@ -59,24 +43,10 @@ def _make_openai_clients(
     return OpenAI(**kw), AsyncOpenAI(**kw)
 
 
-class OpenAILikeEmbedding(_BaseEmbedding):
-    """
-    最小化 OpenAI 兼容 Embedding 客户端，继承自 LlamaIndex ``BaseEmbedding``。
+@dataclass
+class OpenAIEmbeddingConfig:
+    """通用 Embedding 客户端配置。"""
 
-    使用 ``openai.OpenAI`` / ``openai.AsyncOpenAI`` SDK 调用 vLLM / OpenAI 兼容的
-    ``/v1/embeddings`` 端点，支持同步和异步调用，以及私有部署网关的 ``access-key`` 请求头。
-
-    Args:
-        base_url:             Embedding 服务的 base URL（如 ``http://127.0.0.1:8018/v1``）。
-        model_name:           Embedding 模型名称（如 ``bge-large-zh-v1.5``）。
-        api_key:              API Key；本地部署时可设为任意非空字符串（默认 ``"EMPTY"``）。
-        access_key:           可选的 ``access-key`` 请求头（部分私有部署网关需要）。
-        normalize_embeddings: 是否对返回向量做 L2 归一化（默认 ``True``）。
-                              归一化后向量为单位向量，与 ``IndexFlatIP`` 配合时
-                              内积等价于余弦相似度，排名不受向量模长干扰。
-                              **注意**：构建知识库与检索查询必须使用相同的设置；
-                              修改此参数后需重建知识库索引。
-    """
     base_url: str
     model_name: str
     api_key: Optional[str] = None
@@ -84,8 +54,93 @@ class OpenAILikeEmbedding(_BaseEmbedding):
     normalize_embeddings: bool = True
     embed_batch_size: int = 5
 
-    _client: Any = PrivateAttr()
-    _aclient: Any = PrivateAttr()
+    @classmethod
+    def from_env(cls) -> "OpenAIEmbeddingConfig":
+        """从环境变量或 .env 创建配置。"""
+        load_dotenv_candidates(start_path=__file__)
+        return cls(
+            base_url=first_env(
+                ["EMBEDDING_BASE_URL", "QWEN3_BASE_URL", "LLM_BASE_URL"],
+                default="http://127.0.0.1:8018/v1",
+            ) or "http://127.0.0.1:8018/v1",
+            model_name=first_env(
+                ["EMBEDDING_MODEL", "QWEN3_MODEL", "LLM_MODEL"],
+                default="bge-large-zh-v1.5",
+            ) or "bge-large-zh-v1.5",
+            api_key=first_env(["EMBEDDING_API_KEY", "QWEN3_API_KEY", "LLM_API_KEY"]),
+            access_key=first_env(
+                ["EMBEDDING_ACCESS_KEY", "QWEN3_ACCESS_KEY", "LLM_ACCESS_KEY", "ACCESS_KEY"]
+            ),
+        )
+
+
+class OpenAIEmbeddingClient:
+    """更通用的 OpenAI 兼容 Embedding 客户端。"""
+
+    def __init__(self, config: OpenAIEmbeddingConfig) -> None:
+        self.config = config
+        self._client, self._aclient = _make_openai_clients(
+            config.base_url,
+            config.api_key,
+            config.access_key,
+        )
+
+    @classmethod
+    def from_env(cls) -> "OpenAIEmbeddingClient":
+        return cls(OpenAIEmbeddingConfig.from_env())
+
+    def embed_query(self, query: str) -> List[float]:
+        return self.embed_texts([query])[0]
+
+    def embed_text(self, text: str) -> List[float]:
+        return self.embed_texts([text])[0]
+
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        response = self._client.embeddings.create(
+            model=self.config.model_name,
+            input=texts,
+        )
+        embeddings = [item.embedding for item in response.data]
+        return self._maybe_normalize(embeddings)
+
+    async def aembed_query(self, query: str) -> List[float]:
+        return (await self.aembed_texts([query]))[0]
+
+    async def aembed_text(self, text: str) -> List[float]:
+        return (await self.aembed_texts([text]))[0]
+
+    async def aembed_texts(self, texts: List[str]) -> List[List[float]]:
+        response = await self._aclient.embeddings.create(
+            model=self.config.model_name,
+            input=texts,
+        )
+        embeddings = [item.embedding for item in response.data]
+        return self._maybe_normalize(embeddings)
+
+    def _maybe_normalize(self, embeddings: List[List[float]]) -> List[List[float]]:
+        """若 normalize_embeddings=True，对每个向量做 L2 归一化。"""
+        if not self.config.normalize_embeddings:
+            return embeddings
+        normalized: List[List[float]] = []
+        for vector in embeddings:
+            norm = math.sqrt(sum(float(value) * float(value) for value in vector)) or 1.0
+            normalized.append([float(value) / norm for value in vector])
+        return normalized
+
+
+class OpenAILikeEmbedding(_BaseEmbedding):
+    """
+    LlamaIndex 适配层：复用 ``OpenAIEmbeddingClient``，保持旧 API 兼容。
+    """
+
+    base_url: str
+    model_name: str
+    api_key: Optional[str] = None
+    access_key: Optional[str] = None
+    normalize_embeddings: bool = True
+    embed_batch_size: int = 5
+
+    _embedding_client: Any = PrivateAttr()
 
     def __init__(
         self,
@@ -111,93 +166,44 @@ class OpenAILikeEmbedding(_BaseEmbedding):
             embed_batch_size=embed_batch_size,
             **kwargs,
         )
-        self._client, self._aclient = _make_openai_clients(base_url, api_key, access_key)
-
-    # ------------------------------------------------------------------
-    # 工厂方法
-    # ------------------------------------------------------------------
+        self._embedding_client = OpenAIEmbeddingClient(
+            OpenAIEmbeddingConfig(
+                base_url=base_url,
+                model_name=model_name,
+                api_key=api_key,
+                access_key=access_key,
+                normalize_embeddings=normalize_embeddings,
+                embed_batch_size=embed_batch_size,
+            )
+        )
 
     @classmethod
     def from_env(cls) -> "OpenAILikeEmbedding":
-        """
-        从环境变量（或 ``.env`` 文件）创建实例：
-
-        ================  ==========================================
-        参数               读取的环境变量
-        ================  ==========================================
-        base_url          EMBEDDING_BASE_URL / QWEN3_BASE_URL / LLM_BASE_URL
-        api_key           EMBEDDING_API_KEY / QWEN3_API_KEY / LLM_API_KEY
-        access_key        EMBEDDING_ACCESS_KEY / QWEN3_ACCESS_KEY /
-                          LLM_ACCESS_KEY / ACCESS_KEY
-        model_name        EMBEDDING_MODEL / QWEN3_MODEL / LLM_MODEL
-        ================  ==========================================
-        """
-        try:
-            from dotenv import load_dotenv  # type: ignore[import]
-            load_dotenv()
-        except ImportError:
-            pass
-
-        base_url = _first_env(
-            ["EMBEDDING_BASE_URL", "QWEN3_BASE_URL", "LLM_BASE_URL"],
-            default="http://127.0.0.1:8018/v1",
+        """从环境变量（或 ``.env`` 文件）创建实例。"""
+        config = OpenAIEmbeddingConfig.from_env()
+        return cls(
+            base_url=config.base_url,
+            model_name=config.model_name,
+            api_key=config.api_key,
+            access_key=config.access_key,
+            normalize_embeddings=config.normalize_embeddings,
+            embed_batch_size=config.embed_batch_size,
         )
-        api_key = _first_env(["EMBEDDING_API_KEY", "QWEN3_API_KEY", "LLM_API_KEY"])
-        access_key = _first_env(
-            ["EMBEDDING_ACCESS_KEY", "QWEN3_ACCESS_KEY", "LLM_ACCESS_KEY", "ACCESS_KEY"]
-        )
-        model = _first_env(
-            ["EMBEDDING_MODEL", "QWEN3_MODEL", "LLM_MODEL"],
-            default="bge-large-zh-v1.5",
-        )
-        return cls(base_url=base_url, model_name=model, api_key=api_key, access_key=access_key)
-
-    # ------------------------------------------------------------------
-    # 内部辅助
-    # ------------------------------------------------------------------
-
-    def _maybe_normalize(self, embeddings: List[List[float]]) -> List[List[float]]:
-        """若 normalize_embeddings=True，对每个向量做 L2 归一化。"""
-        if not self.normalize_embeddings:
-            return embeddings
-        import numpy as np
-        vecs = np.array(embeddings, dtype=np.float32)
-        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1.0, norms)
-        return (vecs / norms).tolist()
-
-    # ------------------------------------------------------------------
-    # 同步方法
-    # ------------------------------------------------------------------
 
     def _get_query_embedding(self, query: str) -> List[float]:
-        return self._get_text_embeddings([query])[0]
+        return self._embedding_client.embed_query(query)
 
     def _get_text_embedding(self, text: str) -> List[float]:
-        return self._get_text_embeddings([text])[0]
+        return self._embedding_client.embed_text(text)
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
-        response = self._client.embeddings.create(
-            model=self.model_name,
-            input=texts,
-        )
-        embeddings = [item.embedding for item in response.data]
-        return self._maybe_normalize(embeddings)
-
-    # ------------------------------------------------------------------
-    # 异步方法
-    # ------------------------------------------------------------------
+        return self._embedding_client.embed_texts(texts)
 
     async def _aget_query_embedding(self, query: str) -> List[float]:
-        return (await self._aget_text_embeddings([query]))[0]
+        return await self._embedding_client.aembed_query(query)
 
     async def _aget_text_embedding(self, text: str) -> List[float]:
-        return (await self._aget_text_embeddings([text]))[0]
+        return await self._embedding_client.aembed_text(text)
 
     async def _aget_text_embeddings(self, texts: List[str]) -> List[List[float]]:
-        response = await self._aclient.embeddings.create(
-            model=self.model_name,
-            input=texts,
-        )
-        embeddings = [item.embedding for item in response.data]
-        return self._maybe_normalize(embeddings)
+        return await self._embedding_client.aembed_texts(texts)

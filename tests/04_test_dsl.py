@@ -40,7 +40,7 @@ from journey.dsl import JourneyDSL
 from journey.loader import load_journey, load_journey_dict
 from journey.models import JourneyConfig, StateConfig, TransitionConfig
 
-_FIXTURES = Path(__file__).parent / "fixtures"
+_DEMO_FIXTURES = Path(_ROOT) / "demos" / "fraud"
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +121,15 @@ class TestDSL状态定义:
             .build()
         )
         assert [s.name for s in config.states] == ["A", "B", "C"]
+
+    def test_重复状态名抛出异常(self):
+        dsl = JourneyDSL("T").state("A", chat="a")
+        with pytest.raises(ValueError, match="状态 'A' 已存在"):
+            dsl.state("A", chat="again")
+
+    def test_chat与tool互斥(self):
+        with pytest.raises(ValueError, match="chat 与 tool 互斥"):
+            JourneyDSL("T").state("A", chat="a", tool=object())
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +272,14 @@ class TestLoader字典加载:
         assert len(config.transitions) == 1
         assert config.transitions[0].condition == "确认"
 
+    def test_tool_state被正确解析(self):
+        config = load_journey_dict({
+            "title": "T",
+            "states": [{"name": "A", "tool_state": {"name": "risk_lookup"}, "tool_instruction": "查询风险"}],
+        })
+        assert config.states[0].tool_state == {"name": "risk_lookup"}
+        assert config.states[0].tool_instruction == "查询风险"
+
     def test_预设话术被正确解析(self):
         data = {
             "title": "T",
@@ -396,10 +413,10 @@ transitions:
         assert config.transitions[0].condition == "用户确认"
 
     def test_fraud_yaml示例文件可被正确加载(self):
-        """验证 tests/fixtures/fraud.yaml 示例文件可被成功解析。"""
-        yaml_path = _FIXTURES / "fraud.yaml"
+        """验证 demos/fraud/fraud.yaml 示例文件可被成功解析。"""
+        yaml_path = _DEMO_FIXTURES / "fraud.yaml"
         if not yaml_path.exists():
-            pytest.skip("tests/fixtures/fraud.yaml 不存在，跳过")
+            pytest.skip("demos/fraud/fraud.yaml 不存在，跳过")
 
         config = load_journey(str(yaml_path))
         assert config.title == "处理潜在欺诈交易"
@@ -414,10 +431,10 @@ transitions:
 
 class TestLoaderFraudJSON示例:
     def test_fraud_json与yaml内容等价(self):
-        """验证 tests/fixtures/fraud.json 与 tests/fixtures/fraud.yaml 解析结果等价。"""
-        json_path = _FIXTURES / "fraud.json"
+        """验证 demos/fraud/fraud.json 与 demos/fraud/fraud.yaml 解析结果等价。"""
+        json_path = _DEMO_FIXTURES / "fraud.json"
         if not json_path.exists():
-            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
+            pytest.skip("demos/fraud/fraud.json 不存在，跳过")
 
         config = load_journey(str(json_path))
         assert config.title == "处理潜在欺诈交易"
@@ -427,9 +444,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json状态名正确(self):
         """验证 fraud.json 中的状态名与 fraud.yaml 一致。"""
-        json_path = _FIXTURES / "fraud.json"
+        json_path = _DEMO_FIXTURES / "fraud.json"
         if not json_path.exists():
-            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
+            pytest.skip("demos/fraud/fraud.json 不存在，跳过")
 
         config = load_journey(str(json_path))
         state_names = [s.name for s in config.states]
@@ -440,9 +457,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json高风险状态有节点规则(self):
         """验证 fraud.json 中 high_risk 状态含有 2 条节点级规则。"""
-        json_path = _FIXTURES / "fraud.json"
+        json_path = _DEMO_FIXTURES / "fraud.json"
         if not json_path.exists():
-            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
+            pytest.skip("demos/fraud/fraud.json 不存在，跳过")
 
         config = load_journey(str(json_path))
         high_risk = next(s for s in config.states if s.name == "high_risk")
@@ -451,9 +468,9 @@ class TestLoaderFraudJSON示例:
 
     def test_fraud_json预设话术正确解析(self):
         """验证 identity_verify 状态的 canned_response 被正确解析。"""
-        json_path = _FIXTURES / "fraud.json"
+        json_path = _DEMO_FIXTURES / "fraud.json"
         if not json_path.exists():
-            pytest.skip("tests/fixtures/fraud.json 不存在，跳过")
+            pytest.skip("demos/fraud/fraud.json 不存在，跳过")
 
         config = load_journey(str(json_path))
         verify = next(s for s in config.states if s.name == "identity_verify")
@@ -469,4 +486,3 @@ class TestLoaderFraudJSON示例:
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])
-

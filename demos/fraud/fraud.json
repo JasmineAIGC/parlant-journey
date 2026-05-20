@@ -1,8 +1,8 @@
 {
-  "_comment": "fraud.json — 欺诈处理 Journey 配置示例（JSON 格式）。与 fraud.yaml 内容等价，可用 load_journey('tests/fraud.json') 直接加载。",
+  "_comment": "fraud.json — 欺诈处理 Journey 配置示例（JSON 格式）。与 fraud.yaml 内容等价。",
   "title": "处理潜在欺诈交易",
   "description": "引导客户完成欺诈交易的核实与处置，覆盖：身份验证、信息采集、风险评估和针对性处置，确保流程合规、可审计。",
-  "triggers": [
+  "conditions": [
     "我卡被盗刷了",
     "可疑交易",
     "账户异常",
@@ -63,15 +63,47 @@
     }
   ],
   "transitions": [
-    {"source": "identity_verify", "target": "collect_info", "condition": "身份验证成功"},
-    {"source": "identity_verify", "target": "closing",      "condition": "验证失败达到 3 次"},
-    {"source": "collect_info",    "target": "risk_assess"},
-    {"source": "risk_assess",     "target": "high_risk",    "condition": "风险等级为 HIGH"},
-    {"source": "risk_assess",     "target": "medium_risk",  "condition": "风险等级为 MEDIUM"},
-    {"source": "risk_assess",     "target": "low_risk",     "condition": "风险等级为 LOW"},
-    {"source": "high_risk",       "target": "closing"},
-    {"source": "medium_risk",     "target": "closing"},
-    {"source": "low_risk",        "target": "closing"}
+    {
+      "source": "identity_verify",
+      "target": "collect_info",
+      "condition": "身份验证成功"
+    },
+    {
+      "source": "identity_verify",
+      "target": "closing",
+      "condition": "验证失败达到 3 次"
+    },
+    {
+      "source": "collect_info",
+      "target": "risk_assess"
+    },
+    {
+      "source": "risk_assess",
+      "target": "high_risk",
+      "condition": "风险等级为 HIGH"
+    },
+    {
+      "source": "risk_assess",
+      "target": "medium_risk",
+      "condition": "风险等级为 MEDIUM"
+    },
+    {
+      "source": "risk_assess",
+      "target": "low_risk",
+      "condition": "风险等级为 LOW"
+    },
+    {
+      "source": "high_risk",
+      "target": "closing"
+    },
+    {
+      "source": "medium_risk",
+      "target": "closing"
+    },
+    {
+      "source": "low_risk",
+      "target": "closing"
+    }
   ],
   "global_guidelines": [
     {

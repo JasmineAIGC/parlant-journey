@@ -1,0 +1,52 @@
+title: "策略5：重复说明"
+description: "面向用户未理解或重复提问场景的完整流程：识别理解障碍、沿用原知识重述、简化表达并强化关键点。"
+
+conditions:
+  - "你再说简单一点，我还是没听懂哪一种办理速度最快"
+  - "这个我没听懂，你再解释一次"
+  - "你刚才说的太复杂了"
+
+states:
+  - name: intake_and_decision
+    description: "识别用户理解障碍并输出重复说明策略 JSON"
+    chat_state: "判断用户是重复提问、表示没理解还是需要换一种表达方式。"
+    canned_response:
+      strict: true
+      template: |
+        {
+          "first_layer_strategy": "重复说明",
+          "second_layer_strategy": "内容复杂需简化",
+          "selected_candidate_id": ["k1", "k2", "k3"],
+          "reasoning": "用户明确表示没有理解上一轮关于开户时效的说明，需要在同一知识范围内用更简单的方式重新解释。",
+          "suggested_question": "",
+          "additional_guidance": "改用更口语、更简短的表述，重点突出线下与线上最快，邮寄最慢。"
+        }
+    guidelines:
+      - condition: "用户表示没有理解或要求重新解释"
+        action: "继续使用原有知识，但要更换表达方式"
+        priority: 100
+      - condition: "复杂信息需要简化"
+        action: "拆分要点、突出结论、避免引入新概念"
+        priority: 90
+  - name: simplify_message
+    description: "简化原有说明话术"
+    chat_state: "将复杂说明拆成更短、更易理解的句子，保持信息准确。"
+  - name: reinforce_key_points
+    description: "强化用户最容易忽略的关键结论"
+    chat_state: "在完成简化说明后，重复最关键的结论与对比结果。"
+
+transitions:
+  - source: intake_and_decision
+    target: simplify_message
+    condition: "已识别需要重复说明"
+  - source: simplify_message
+    target: reinforce_key_points
+    condition: "已完成简化表达"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "进入重复说明策略"
+    action: "只能重述已有知识，不能编造新的解释内容"
+    priority: 95

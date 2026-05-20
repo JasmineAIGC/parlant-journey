@@ -9,7 +9,7 @@ tools.parlant_server
 
 快速导入::
 
-    from tools.parlant_server import ParlantServerContext, run_conversation
+    from tools.parlant_server import ParlantServerConfig, ParlantServerContext, run_conversation
     from journey import create_journey
 
     async with ParlantServerContext() as ctx:
@@ -19,7 +19,7 @@ tools.parlant_server
             print(f"用户: {user_msg}")
             print(f"Agent: {reply}")
 """
-from .server import ParlantServerContext
+from .server import ParlantServerConfig, ParlantServerContext
 from .session import run_conversation
 
-__all__ = ["ParlantServerContext", "run_conversation"]
+__all__ = ["ParlantServerConfig", "ParlantServerContext", "run_conversation"]

@@ -44,6 +44,7 @@ from tools.llm.client import (
     DEFAULT_MODEL,
     LLMClient,
     LLMConfig,
+    prepare_litellm_environment,
     bridge_parlant_litellm_env,
     _patch_litellm_embedding_encoding_format,
     _build_thinking_extra_body,
@@ -51,6 +52,7 @@ from tools.llm.client import (
     _is_thinking_model,
     _needs_openai_prefix,
 )
+from tools.embedding.client import OpenAIEmbeddingClient, OpenAIEmbeddingConfig
 
 # journey-specific 函数
 from journey.generator import (
@@ -420,6 +422,59 @@ class TestEmbeddingDimensionsBridge:
 
         assert "LITELLM_EMBEDDING_DIMENSIONS" not in resolved
 
+    def test_prepare_litellm_environment与旧接口等价(self, monkeypatch):
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+        monkeypatch.setenv("LLM_API_KEY", "sk-test")
+        monkeypatch.setenv("LLM_MODEL", "Qwen2.5-7B-Instruct")
+        monkeypatch.delenv("LITELLM_PROVIDER_API_KEY", raising=False)
+        monkeypatch.delenv("LITELLM_PROVIDER_MODEL_NAME", raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = prepare_litellm_environment()
+
+        assert resolved["LITELLM_PROVIDER_API_KEY"] == "sk-test"
+        assert resolved["LITELLM_PROVIDER_MODEL_NAME"] == "openai/Qwen2.5-7B-Instruct"
+
+
+class TestOpenAIEmbeddingClient:
+    def test_config_from_env读取embedding前缀(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_BASE_URL", "http://emb.local/v1")
+        monkeypatch.setenv("EMBEDDING_MODEL", "bge-large-zh-v1.5")
+        monkeypatch.setenv("EMBEDDING_API_KEY", "emb-key")
+
+        config = OpenAIEmbeddingConfig.from_env()
+        assert config.base_url == "http://emb.local/v1"
+        assert config.model_name == "bge-large-zh-v1.5"
+        assert config.api_key == "emb-key"
+
+    def test_embed_texts走通用客户端(self, monkeypatch):
+        sync_client = MagicMock()
+        sync_client.embeddings.create.return_value = SimpleNamespace(
+            data=[SimpleNamespace(embedding=[3.0, 4.0])]
+        )
+        async_client = MagicMock()
+        monkeypatch.setattr(
+            "tools.embedding.client._make_openai_clients",
+            lambda *args, **kwargs: (sync_client, async_client),
+        )
+
+        client = OpenAIEmbeddingClient(
+            OpenAIEmbeddingConfig(
+                base_url="http://emb.local/v1",
+                model_name="bge-large-zh-v1.5",
+            )
+        )
+
+        result = client.embed_texts(["你好"])
+        assert result == [[0.6, 0.8]]
+        sync_client.embeddings.create.assert_called_once_with(
+            model="bge-large-zh-v1.5",
+            input=["你好"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # LLMConfig 构建
@@ -451,7 +506,7 @@ class TestLLMConfig构建:
         monkeypatch.setenv("LLM_API_KEY", "sk-from-env")
         monkeypatch.setenv("LLM_MODEL", "gpt-4o")
         monkeypatch.setenv("LLM_BASE_URL", "http://my-server/v1")
-        for k in ["QWEN3_API_KEY", "QWEN3_MODEL"]:
+        for k in ["QWEN3_API_KEY", "QWEN3_MODEL", "QWEN3_BASE_URL"]:
             monkeypatch.delenv(k, raising=False)
 
         with patch(_LOAD_DOTENV_PATCH):
