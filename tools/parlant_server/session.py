@@ -64,7 +64,7 @@ async def run_conversation(
                 ),
                 timeout=timeout,
             )
-        except (asyncio.TimeoutError, TimeoutError):
+        except TimeoutError:
             yield user_msg, ""
             continue
 

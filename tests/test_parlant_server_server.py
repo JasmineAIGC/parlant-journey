@@ -45,7 +45,7 @@ async def test_context_passes_explicit_port_to_server_factory(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_context_preserves_server_kwargs_port_over_explicit_port(monkeypatch: pytest.MonkeyPatch):
+async def test_context_explicit_port_overrides_server_kwargs_port(monkeypatch: pytest.MonkeyPatch):
     captured = {}
 
     def fake_server_factory(**kwargs):
@@ -65,7 +65,7 @@ async def test_context_preserves_server_kwargs_port_over_explicit_port(monkeypat
     ):
         pass
 
-    assert captured['port'] == 9456
+    assert captured['port'] == 9321
 
 
 @pytest.mark.asyncio

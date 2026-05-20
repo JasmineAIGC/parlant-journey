@@ -12,6 +12,7 @@ from demos.decision_engine.demo_decision_engine import (
     DECISION_JOURNEY_FILES,
     DEMO_PORT,
     DEMO_SCENARIOS,
+    _load_demo_port,
 )
 
 
@@ -51,3 +52,12 @@ def test_decision_engine_demo_scenarios_match_loaded_journeys() -> None:
     for scenario in DEMO_SCENARIOS:
         assert scenario['journey_title'] in journey_titles
         assert len(scenario['messages']) >= 2
+
+
+def test_decision_engine_demo_invalid_port_env_raises(monkeypatch) -> None:
+    monkeypatch.setenv("PARLANT_SERVER_PORT", "bad-port")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="PARLANT_SERVER_PORT 必须为整数"):
+        _load_demo_port()

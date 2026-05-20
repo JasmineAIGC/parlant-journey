@@ -73,7 +73,7 @@ class ParlantServerContext:
         server_factory = self._config.server_factory or p.Server
         server_kwargs = dict(self._config.server_kwargs)
         if self._config.port is not None:
-            server_kwargs.setdefault("port", self._config.port)
+            server_kwargs["port"] = self._config.port
 
         logger.info(
             "[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s  port=%s",

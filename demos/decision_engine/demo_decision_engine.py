@@ -28,7 +28,18 @@ from journey import load_journey, register_journeys  # noqa: E402
 from tools.parlant_server import ParlantServerContext  # noqa: E402
 from tools.parlant_server.session import run_conversation  # noqa: E402
 
-DEMO_PORT = int(os.getenv("PARLANT_SERVER_PORT", "8800"))
+
+def _load_demo_port() -> int:
+    raw_port = os.getenv("PARLANT_SERVER_PORT", "8800")
+    try:
+        return int(raw_port)
+    except ValueError as exc:
+        raise ValueError(
+            f"PARLANT_SERVER_PORT 必须为整数，当前值为: {raw_port!r}"
+        ) from exc
+
+
+DEMO_PORT = _load_demo_port()
 DECISION_JOURNEY_FILES: List[str] = [
     "01_refusal.yaml",
     "02_user_terminate.yaml",
