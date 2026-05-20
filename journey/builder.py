@@ -7,11 +7,14 @@ journey.builder
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 import parlant.sdk as p
 
 from .models import JourneyConfig, StateConfig
+
+logger = logging.getLogger(__name__)
 
 
 class JourneyBuilder:
@@ -39,12 +42,14 @@ class JourneyBuilder:
 
     async def build(self) -> p.Journey:
         """按顺序执行所有构建步骤，返回构建完成的 Journey 对象。"""
+        logger.debug("[JourneyBuilder] 开始构建 Journey  title=%r", self._config.title)
         await self._create_journey()
         await self._create_canned_responses()
         await self._build_dag()
         await self._register_node_guidelines()
         await self._register_global_guidelines()
         assert self._journey is not None
+        logger.debug("[JourneyBuilder] Journey 构建完成  title=%r  id=%s", self._config.title, self._journey.id)
         return self._journey
 
     # ------------------------------------------------------------------
@@ -52,11 +57,13 @@ class JourneyBuilder:
     # ------------------------------------------------------------------
 
     async def _create_journey(self) -> None:
+        logger.debug("[JourneyBuilder] 步骤①：创建 Journey 外壳  title=%r", self._config.title)
         self._journey = await self._agent.create_journey(
             title=self._config.title,
             description=self._config.description,
             conditions=self._config.conditions,
         )
+        logger.debug("[JourneyBuilder] Journey 外壳已创建  id=%s", self._journey.id)
 
     # ------------------------------------------------------------------
     # 步骤②：预创建所有预设话术
@@ -64,12 +71,14 @@ class JourneyBuilder:
 
     async def _create_canned_responses(self) -> None:
         """为配置了 canned_response 的状态预创建 CannedResponse 对象，存入 _canrep_map。"""
-        for state in self._config.states:
-            if state.canned_response is not None:
-                canned = await self._agent.create_canned_response(
-                    template=state.canned_response.template,
-                )
-                self._canrep_map[state.name] = canned
+        states_with_canned = [s for s in self._config.states if s.canned_response is not None]
+        logger.debug("[JourneyBuilder] 步骤②：预创建预设话术  count=%d", len(states_with_canned))
+        for state in states_with_canned:
+            canned = await self._agent.create_canned_response(
+                template=state.canned_response.template,  # type: ignore[union-attr]
+            )
+            self._canrep_map[state.name] = canned
+            logger.debug("[JourneyBuilder] CannedResponse 已创建  state=%r", state.name)
 
     # ------------------------------------------------------------------
     # 步骤③：构建状态 DAG
@@ -87,6 +96,11 @@ class JourneyBuilder:
         根节点（无入边的状态）直接挂在 journey.initial_state 下。
         """
         assert self._journey is not None
+        logger.debug(
+            "[JourneyBuilder] 步骤③：构建状态 DAG  states=%d  transitions=%d",
+            len(self._config.states),
+            len(self._config.transitions),
+        )
 
         # 计算所有作为 target 的状态名
         all_targets = {t.target for t in self._config.transitions}
@@ -94,6 +108,7 @@ class JourneyBuilder:
 
         # 根节点：从未出现在 target 中的状态（即无入边的状态）
         roots = all_state_names - all_targets
+        logger.debug("[JourneyBuilder] 根节点  roots=%s", sorted(roots))
 
         # ── 从 journey.initial_state 创建所有根状态 ──────────────────
         for root_name in roots:
@@ -106,6 +121,7 @@ class JourneyBuilder:
             kwargs = self._build_state_kwargs(root_cfg)
             root_trans = await self._journey.initial_state.transition_to(**kwargs)
             self._state_obj_map[root_name] = root_trans.target
+            logger.debug("[JourneyBuilder] 根状态已创建  state=%r", root_name)
 
         # ── 按拓扑顺序处理所有转移边 ─────────────────────────────────
         for trans in self._config.transitions:
@@ -123,6 +139,10 @@ class JourneyBuilder:
 
             if trans.target in self._state_obj_map:
                 # 汇聚场景：目标状态已存在，直接复用（不重复创建）
+                logger.debug(
+                    "[JourneyBuilder] 复用已有状态（汇聚）  %r → %r  condition=%r",
+                    trans.source, trans.target, trans.condition,
+                )
                 await source_obj.transition_to(
                     state=self._state_obj_map[trans.target],
                     **condition_kwargs,
@@ -138,6 +158,10 @@ class JourneyBuilder:
                 kwargs = self._build_state_kwargs(target_cfg, **condition_kwargs)
                 new_trans = await source_obj.transition_to(**kwargs)
                 self._state_obj_map[trans.target] = new_trans.target
+                logger.debug(
+                    "[JourneyBuilder] 状态已创建  %r → %r  condition=%r",
+                    trans.source, trans.target, trans.condition,
+                )
 
     # ------------------------------------------------------------------
     # 步骤④：注册节点级行为规则
@@ -146,6 +170,8 @@ class JourneyBuilder:
     async def _register_node_guidelines(self) -> None:
         """遍历所有状态，逐条注册节点级 guideline。"""
         assert self._journey is not None
+        total = sum(len(s.guidelines) for s in self._config.states)
+        logger.debug("[JourneyBuilder] 步骤④：注册节点级指南  total=%d", total)
         for state in self._config.states:
             await self._register_guidelines(state.guidelines)
 
@@ -155,6 +181,10 @@ class JourneyBuilder:
 
     async def _register_global_guidelines(self) -> None:
         """注册 JourneyConfig.global_guidelines 中的所有全局规则。"""
+        logger.debug(
+            "[JourneyBuilder] 步骤⑤：注册全局指南  count=%d",
+            len(self._config.global_guidelines),
+        )
         await self._register_guidelines(self._config.global_guidelines)
 
     # ------------------------------------------------------------------

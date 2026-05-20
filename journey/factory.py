@@ -8,12 +8,15 @@ journey.factory
 
 from __future__ import annotations
 
+import logging
 from typing import List
 
 import parlant.sdk as p
 
 from .builder import JourneyBuilder
 from .models import JourneyConfig
+
+logger = logging.getLogger(__name__)
 
 
 async def create_journey(agent: p.Agent, config: JourneyConfig) -> p.Journey:
@@ -30,7 +33,14 @@ async def create_journey(agent: p.Agent, config: JourneyConfig) -> p.Journey:
 
         journey = await create_journey(agent, fraud_config)
     """
-    return await JourneyBuilder(agent, config).build()
+    logger.debug("[create_journey] 开始  title=%r", config.title)
+    try:
+        journey = await JourneyBuilder(agent, config).build()
+    except Exception:
+        logger.error("[create_journey] 构建失败  title=%r", config.title, exc_info=True)
+        raise
+    logger.debug("[create_journey] 完成  title=%r  id=%s", config.title, journey.id)
+    return journey
 
 
 async def register_journeys(
@@ -50,5 +60,8 @@ async def register_journeys(
 
         journeys = await register_journeys(agent, [fraud_config, loan_config])
     """
-    return [await create_journey(agent, cfg) for cfg in configs]
+    logger.debug("[register_journeys] 开始批量注册  count=%d", len(configs))
+    journeys = [await create_journey(agent, cfg) for cfg in configs]
+    logger.debug("[register_journeys] 批量注册完成  count=%d", len(journeys))
+    return journeys
 
