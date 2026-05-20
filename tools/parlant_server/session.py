@@ -3,16 +3,6 @@ tools.parlant_server.session
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Parlant 多轮对话辅助函数。
-
-用法::
-
-    from tools.parlant_server import ParlantServerContext, run_conversation
-
-    async with ParlantServerContext() as ctx:
-        agent = await ctx.create_agent("my-agent", "描述")
-        async for user_msg, reply in run_conversation(ctx, agent, messages):
-            print(f"用户: {user_msg}")
-            print(f"Agent: {reply}")
 """
 from __future__ import annotations
 
@@ -23,17 +13,17 @@ async def run_conversation(
     ctx: Any,
     agent: Any,
     messages: List[str],
-    timeout: float = 120.0,
+    timeout: float = 300.0,
     title: str = "对话",
 ) -> AsyncGenerator[Tuple[str, str], None]:
     """
     驱动用户与 Agent 的多轮对话，逐轮 yield ``(user_msg, agent_reply)``。
 
     Args:
-        ctx:      :class:`~tools.parlant_server.ParlantServerContext` 实例（已进入上下文）。
+        ctx:      ParlantServerContext 实例（已进入上下文）。
         agent:    Parlant Agent 对象（由 ``ctx.create_agent()`` 创建）。
         messages: 用户消息列表（每条消息触发一轮 Agent 回复）。
-        timeout:  等待 Agent 回复的超时秒数（默认 120s）。
+        timeout:  等待 Agent 回复的超时秒数（默认 300s）。
         title:    会话标题。
 
     Yields:

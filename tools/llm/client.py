@@ -4,9 +4,7 @@ tools.llm.client
 
 LLM 客户端 — 通过 OpenAI 兼容 API 调用远程 LLM 服务（vLLM / OpenAI / DeepSeek 等）。
 
-基于 LiteLLM，接入本地 vLLM / OpenAI 兼容端点。
-
-配置优先级：
+基于 LiteLLM，接入本地 vLLM / OpenAI 兼容端点。配置优先级：
   构造函数传入 LLMConfig  >  .env 文件  >  系统环境变量
 
 依赖::
@@ -163,18 +161,8 @@ class _PatchedEmbeddingResponse:
 def _patch_litellm_embedding_encoding_format() -> None:
     """修补 litellm.aembedding，解决 vLLM Qwen3-Embedding 响应解析失败问题。
 
-    **根本原因**：Parlant 调用 ``litellm.aembedding`` 时，litellm 内部的
-    ``convert_to_model_response_object`` 对 vLLM 某些 Embedding 模型（如 Qwen3-Embedding-8B）
-    的响应格式解析失败，抛出空消息 ``OpenAIException -``。
-
-    **关键注意**：Parlant 通过 ``kwargs["api_base"]`` 传入的是 LLM 服务地址
-    （``LITELLM_PROVIDER_BASE_URL``），而非 Embedding 专用地址。
-    正确优先级为：``EMBEDDING_BASE_URL`` > ``kwargs["api_base"]``。
-
-    **修复策略**：
-
-    - 有 base_url 时：用 OpenAI SDK 直接调用，完全绕过 litellm 响应解析层。
-    - 无 base_url 时（云端 API）：回退到 litellm，同时修复 ``encoding_format=None → "float"``。
+    - 有 base_url → 用 OpenAI SDK 直接调用，绕过 litellm 响应解析层。
+    - 无 base_url → 回退到 litellm，修复 encoding_format=None → "float"。
 
     幂等：多次调用只执行一次修补（通过 ``_journey_emb_patched`` 标记判断）。
     """
@@ -260,26 +248,9 @@ def _patch_litellm_embedding_encoding_format() -> None:
 def bridge_parlant_litellm_env() -> dict:
     """将 .env 中的 LLM/Embedding 配置桥接到 Parlant LiteLLM 所需环境变量。
 
-    Parlant 使用 LiteLLM 作为 NLP 后端时读取以下环境变量：
-
-    - ``LITELLM_PROVIDER_BASE_URL``  — LLM 服务地址
-    - ``LITELLM_PROVIDER_API_KEY``   — LLM API Key
-    - ``LITELLM_PROVIDER_MODEL_NAME`` — LLM 模型名称
-    - ``LITELLM_EMBEDDING_MODEL_NAME`` — Embedding 模型名称；
-      **未设置时 Parlant 默认使用 jinaai/jina-embeddings-v2-base-en（需从
-      HuggingFace 下载）**，内网环境下必须通过此变量指定自定义 Embedding 模型。
-    - ``LITELLM_EMBEDDING_DIMENSIONS`` — Embedding 向量维度（默认 1536）
-
-    本函数还会修补 ``litellm.aembedding``，解决 vLLM 端点的两个兼容性问题：
-
-    - **主路径**：优先使用 OpenAI SDK 直接调用（参考 ``third_party/rag_query_bundle``
-      实现），绕过 litellm 响应解析层，避免 vLLM 某些模型（如 Qwen3-Embedding-8B）
-      响应格式不兼容导致的 ``OpenAIException -`` 空消息错误。
-    - **回退路径**：若 OpenAI SDK 失败，回退到 litellm 并将 ``encoding_format=None``
-      替换为 ``"float"``，避免 vLLM 因收到 JSON null 而返回 400 Bad Request。
-
-    本函数将现有 .env 中的 LLM/Embedding 配置自动回填，
-    优先保留用户已显式设置的 ``LITELLM_*`` 值。
+    读取 QWEN3_*/LLM_*/OPENAI_* 环境变量，写入 LITELLM_PROVIDER_* 系列变量，
+    并自动推断 LITELLM_EMBEDDING_DIMENSIONS（对已知 Embedding 模型）。
+    同时修补 litellm.aembedding 以兼容 vLLM 端点。
 
     Returns:
         已解析并写入环境的 ``LITELLM_*`` 键值对。
@@ -433,8 +404,6 @@ class LLMConfig:
         环境变量读取优先级（高 → 低）：
           ``QWEN3_*`` > ``LLM_*`` > ``OPENAI_*`` > ``DEEPSEEK_*``
 
-        与 ``third_party/.env`` 中的 ``QWEN3_*`` 命名完全兼容。
-
         Raises:
             ValueError: 若无法找到任何 API Key。
         """
@@ -494,19 +463,8 @@ class LLMClient:
     """
     基于 LiteLLM 的轻量级异步 LLM 客户端（API 模式）。
 
-    每次 ``chat_async()`` 调用恰好发起一次 API 请求（无 Agent 框架开销）。
     通过 OpenAI 兼容接口访问远程 LLM 服务（vLLM / OpenAI / DeepSeek 等）。
-
-    特性：
-      - 支持 OpenAI / vLLM / DeepSeek 等 OpenAI 兼容端点
-      - 推理模型（Qwen3 / DeepSeek-R1）自动禁用思考模式
-      - 自动添加 ``openai/`` 路由前缀（LiteLLM 路由规则）
-      - 剥除响应中的 ``<think>...</think>`` 块
-      - 连接失败时给出友好提示
-
-    依赖::
-
-        pip install litellm
+    推理模型（Qwen3 / DeepSeek-R1）自动禁用思考模式，并剥除 ``<think>`` 块。
 
     用法::
 
