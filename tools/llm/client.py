@@ -122,16 +122,23 @@ def _build_thinking_extra_body(
 
 
 def _patch_litellm_embedding_encoding_format() -> None:
-    """修补 litellm.aembedding，将 encoding_format=None 替换为 "float"。
+    """修补 litellm.aembedding，解决 vLLM 端点的两个兼容性问题。
 
-    vLLM 的 /v1/embeddings 端点要求 encoding_format 必须是
-    'float'、'base64'、'bytes' 或 'bytes_only' 之一；
-    传入 None（JSON null）会触发 400 Bad Request。
+    **问题 1**：vLLM /v1/embeddings 要求 encoding_format 必须是
+    ``'float'、'base64'、'bytes' 或 'bytes_only'`` 之一；
+    Parlant 通过 litellm 调用时传入 ``None``（JSON null）会触发 400 Bad Request。
 
-    Parlant 的 LiteLLM NLP 服务在调用 litellm.aembedding 时会传递
-    encoding_format=None，本函数通过包装函数将其替换为 "float"。
+    **问题 2**：litellm 的 ``convert_to_model_response_object`` 对 vLLM 某些模型
+    （如 Qwen3-Embedding-8B）的响应格式解析失败，抛出空消息 ``OpenAIException -``。
 
-    幂等：多次调用只执行一次修补（通过 _journey_emb_patched 标记判断）。
+    **修复策略（参考 third_party/rag_query_bundle/model_client/api/embedding.py）**：
+
+    1. **主路径**：优先使用 OpenAI SDK 直接调用 ``/v1/embeddings``，与 third_party
+       embedding 客户端保持一致，绕过 litellm 的响应解析层。
+    2. **回退路径**：若 OpenAI SDK 不可用或调用失败，回退到 litellm 并将
+       ``encoding_format=None`` 替换为 ``"float"``。
+
+    幂等：多次调用只执行一次修补（通过 ``_journey_emb_patched`` 标记判断）。
     """
     try:
         import litellm  # type: ignore[import]
@@ -145,13 +152,70 @@ def _patch_litellm_embedding_encoding_format() -> None:
 
         @functools.wraps(_orig)
         async def _patched(*args, **kwargs):
+            # ----------------------------------------------------------------
+            # 主路径：OpenAI SDK 直接调用（参考 third_party 实现，不传 encoding_format）
+            # ----------------------------------------------------------------
+            try:
+                from openai import AsyncOpenAI as _AsyncOpenAI  # type: ignore[import]
+
+                # 提取调用参数
+                model_name: str = kwargs.get("model") or (args[0] if args else "")
+                # 剥除 LiteLLM 路由前缀（如 "openai/Qwen3-Embedding-8B" → "Qwen3-Embedding-8B"）
+                if "/" in model_name:
+                    model_name = model_name.split("/", 1)[-1]
+
+                api_base: Optional[str] = (
+                    kwargs.get("api_base")
+                    or os.getenv("EMBEDDING_BASE_URL")
+                    or os.getenv("LITELLM_PROVIDER_BASE_URL")
+                )
+                api_key: Optional[str] = (
+                    kwargs.get("api_key")
+                    or os.getenv("EMBEDDING_API_KEY")
+                    or os.getenv("LITELLM_PROVIDER_API_KEY")
+                    or "EMPTY"
+                )
+                input_texts = kwargs.get("input") or (args[1] if len(args) > 1 else None)
+
+                if api_base and model_name and input_texts:
+                    aclient = _AsyncOpenAI(api_key=api_key, base_url=api_base)
+                    resp = await aclient.embeddings.create(
+                        model=model_name,
+                        input=input_texts,
+                    )
+                    # 构建 litellm 兼容响应（Parlant 通过 response.data[i]["embedding"] 访问）
+                    return litellm.EmbeddingResponse(
+                        model=model_name,
+                        data=[
+                            {
+                                "object": "embedding",
+                                "embedding": item.embedding,
+                                "index": item.index,
+                            }
+                            for item in resp.data
+                        ],
+                        usage={
+                            "prompt_tokens": resp.usage.prompt_tokens,
+                            "total_tokens": resp.usage.total_tokens,
+                        },
+                    )
+            except ImportError:
+                logger.debug("[embedding patch] openai SDK 未安装，回退到 litellm")
+            except Exception as _openai_exc:
+                logger.debug("[embedding patch] OpenAI SDK 调用失败，回退到 litellm: %s", _openai_exc)
+
+            # ----------------------------------------------------------------
+            # 回退路径：litellm，修复 encoding_format=None → "float"
+            # ----------------------------------------------------------------
             if kwargs.get("encoding_format") is None:
                 kwargs["encoding_format"] = "float"
             return await _orig(*args, **kwargs)
 
         litellm.aembedding = _patched
         litellm._journey_emb_patched = True
-        logger.debug("[bridge_parlant_litellm_env] litellm.aembedding patched: encoding_format None→float")
+        logger.debug(
+            "[bridge_parlant_litellm_env] litellm.aembedding patched: OpenAI SDK primary, litellm fallback"
+        )
     except Exception as exc:
         logger.debug("[bridge_parlant_litellm_env] embedding patch 失败（非致命）: %s", exc)
 
@@ -169,8 +233,13 @@ def bridge_parlant_litellm_env() -> dict:
       HuggingFace 下载）**，内网环境下必须通过此变量指定自定义 Embedding 模型。
     - ``LITELLM_EMBEDDING_DIMENSIONS`` — Embedding 向量维度（默认 1536）
 
-    本函数还会修补 ``litellm.aembedding``，将 ``encoding_format=None`` 替换为
-    ``"float"``，避免 vLLM 端点因收到 JSON null 而返回 400 Bad Request。
+    本函数还会修补 ``litellm.aembedding``，解决 vLLM 端点的两个兼容性问题：
+
+    - **主路径**：优先使用 OpenAI SDK 直接调用（参考 ``third_party/rag_query_bundle``
+      实现），绕过 litellm 响应解析层，避免 vLLM 某些模型（如 Qwen3-Embedding-8B）
+      响应格式不兼容导致的 ``OpenAIException -`` 空消息错误。
+    - **回退路径**：若 OpenAI SDK 失败，回退到 litellm 并将 ``encoding_format=None``
+      替换为 ``"float"``，避免 vLLM 因收到 JSON null 而返回 400 Bad Request。
 
     本函数将现有 .env 中的 LLM/Embedding 配置自动回填，
     优先保留用户已显式设置的 ``LITELLM_*`` 值。
@@ -219,7 +288,7 @@ def bridge_parlant_litellm_env() -> dict:
         os.environ.setdefault("LITELLM_EMBEDDING_DIMENSIONS", emb_dims)
         resolved["LITELLM_EMBEDDING_DIMENSIONS"] = os.environ["LITELLM_EMBEDDING_DIMENSIONS"]
 
-    # vLLM 不接受 encoding_format=None：修补 litellm.aembedding 以默认 "float"
+    # 修补 litellm.aembedding：主路径使用 OpenAI SDK，回退路径修复 encoding_format=None
     _patch_litellm_embedding_encoding_format()
 
     return resolved
