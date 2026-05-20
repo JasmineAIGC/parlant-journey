@@ -1,0 +1,55 @@
+title: "策略3：确认/追问"
+description: "面向关键信息缺失场景的完整流程：识别核心意图、定位缺失字段、单轮只追问一个最高优先级问题、等待后续补充。"
+
+conditions:
+  - "我想了解开户条件"
+  - "开户需要什么条件"
+  - "我可以开户吗"
+
+states:
+  - name: intake_and_decision
+    description: "识别缺失字段并输出确认/追问策略 JSON"
+    chat_state: "结合用户意图、当前 user_space 与知识前提，判断是否必须先追问关键信息。"
+    canned_response:
+      strict: true
+      template: |
+        {
+          "first_layer_strategy": "确认/追问",
+          "second_layer_strategy": "核实具体业务关键信息",
+          "selected_candidate_id": [],
+          "reasoning": "用户意图为咨询开户资质，但国籍等关键信息缺失，必须先补充必要信息后才能继续作答。",
+          "suggested_question": "请问您是日本国籍吗？",
+          "additional_guidance": "单次只追问一个问题，不要同时提出多个问题。"
+        }
+    guidelines:
+      - condition: "用户核心意图明确，但办理所需关键信息缺失"
+        action: "只追问一个最高优先级的问题"
+        priority: 100
+      - condition: "场景为开户资质或开户资料咨询"
+        action: "优先核实国籍、年龄、办理网点等关键字段"
+        priority: 90
+      - condition: "现有知识不足以直接回答"
+        action: "禁止直接作答或臆测用户情况"
+        priority: 85
+  - name: wait_for_user_info
+    description: "等待用户补充缺失信息"
+    chat_state: "在提出单个关键问题后，等待用户补充信息，不要连续追问多个字段。"
+  - name: resume_decision
+    description: "收到补充信息后恢复后续策略判断"
+    chat_state: "用户补充完关键信息后，再决定进入直接作答、拒绝回答或继续追问。"
+
+transitions:
+  - source: intake_and_decision
+    target: wait_for_user_info
+    condition: "已提出单个最高优先级追问"
+  - source: wait_for_user_info
+    target: resume_decision
+    condition: "已收到用户补充信息"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "需要追问时"
+    action: "单轮只允许一个问题，且问题必须服务于当前核心意图"
+    priority: 95

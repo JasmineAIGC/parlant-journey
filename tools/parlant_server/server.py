@@ -22,6 +22,7 @@ class ParlantServerConfig:
     """Parlant Server 程序化运行配置。"""
 
     nlp_service: Any = None
+    port: Optional[int] = None
     prepare_environment: Optional[Callable[[], Any]] = None
     server_factory: Optional[Callable[..., Any]] = None
     server_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -40,6 +41,7 @@ class ParlantServerContext:
         bridge_env: bool = True,
         *,
         config: Optional[ParlantServerConfig] = None,
+        port: Optional[int] = None,
         prepare_environment: Optional[Callable[[], Any]] = None,
         server_factory: Optional[Callable[..., Any]] = None,
         server_kwargs: Optional[dict[str, Any]] = None,
@@ -49,6 +51,7 @@ class ParlantServerContext:
                 prepare_environment = _default_prepare_environment
             config = ParlantServerConfig(
                 nlp_service=nlp_service,
+                port=port,
                 prepare_environment=prepare_environment,
                 server_factory=server_factory,
                 server_kwargs=dict(server_kwargs or {}),
@@ -68,8 +71,16 @@ class ParlantServerContext:
             nlp_service = p.NLPServices.litellm
 
         server_factory = self._config.server_factory or p.Server
-        logger.info("[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s", nlp_service)
-        self._server_ctx = server_factory(nlp_service=nlp_service, **self._config.server_kwargs)
+        server_kwargs = dict(self._config.server_kwargs)
+        if self._config.port is not None:
+            server_kwargs.setdefault("port", self._config.port)
+
+        logger.info(
+            "[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s  port=%s",
+            nlp_service,
+            server_kwargs.get("port", "default"),
+        )
+        self._server_ctx = server_factory(nlp_service=nlp_service, **server_kwargs)
         self._server = await self._server_ctx.__aenter__()
         logger.info("[ParlantServerContext] Server 就绪")
         return self
