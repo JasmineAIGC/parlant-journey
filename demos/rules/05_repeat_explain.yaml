@@ -1,0 +1,33 @@
+title: "策略5：重复说明"
+description: "docs/rules.md 中的重复说明策略代表场景：用户表示没听懂，需要更简单地重新解释。"
+
+conditions:
+  - "你再说简单一点，我还是没听懂哪一种办理速度最快"
+
+states:
+  - name: repeat_explain_decision
+    description: "输出重复说明策略 JSON"
+    chat_state: "当前仅处理 docs/rules.md 中的重复说明策略。"
+    canned_response:
+      strict: true
+      template: |
+        {
+          "first_layer_strategy": "重复说明",
+          "second_layer_strategy": "内容复杂需简化",
+          "selected_candidate_id": ["k1", "k2", "k3"],
+          "reasoning": "用户明确表示没有理解上一轮关于开户时效的说明，需要在同一知识范围内用更简单的方式重新解释。",
+          "suggested_question": "",
+          "additional_guidance": "改用更口语、更简短的表述，重点突出线下与线上最快，邮寄最慢。"
+        }
+    guidelines:
+      - condition: "用户表示没听懂或要求换一种解释方式"
+        action: "基于原有知识重新解释，不新增无关信息"
+        priority: 95
+      - condition: "需要简化复杂内容"
+        action: "拆分要点，突出核心差异"
+        priority: 85
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加额外说明"
+    priority: 100

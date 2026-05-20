@@ -1,0 +1,33 @@
+title: "策略7：问题已解决"
+description: "docs/rules.md 中的问题已解决策略代表场景：用户表达感谢且对话自然收尾。"
+
+conditions:
+  - "没有其他问题了，谢谢！"
+
+states:
+  - name: resolved_decision
+    description: "输出问题已解决策略 JSON"
+    chat_state: "当前仅处理 docs/rules.md 中的问题已解决策略。"
+    canned_response:
+      strict: true
+      template: |
+        {
+          "first_layer_strategy": "问题已解决",
+          "second_layer_strategy": "用户表达感谢",
+          "selected_candidate_id": [],
+          "reasoning": "用户明确表示没有其他问题并表达感谢，说明当前咨询目标已达成，可按办结收尾策略结束对话。",
+          "suggested_question": "",
+          "additional_guidance": "简洁致谢，告知如有其他问题可继续咨询，自然结束对话。"
+        }
+    guidelines:
+      - condition: "用户明确表示问题已解决或表达感谢"
+        action: "使用问题已解决策略礼貌收尾"
+        priority: 95
+      - condition: "对话目标已完成"
+        action: "总结已完成服务并自然道别"
+        priority: 80
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加额外说明"
+    priority: 100

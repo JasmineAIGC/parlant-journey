@@ -71,6 +71,7 @@ async with p.Server(...) as server:
 pip install -r requirements.txt
 # 3. 运行演示
 python demos/fraud/demo_fraud.py
+python demos/rules/demo_rules.py
 ```
 
 ## 目录说明
@@ -82,6 +83,7 @@ tests/
   02_test_builder.py  构建器单元测试（mock SDK）
   03_test_factory.py  工厂函数单元测试
 demos/fraud/          独立欺诈处理演示及其配置文件
+demos/rules/          docs/rules.md 对应的多 Journey 策略演示
 docs/ARCHITECTURE.md  完整技术方案（权威文档）
 ```
 
@@ -89,6 +91,7 @@ docs/ARCHITECTURE.md  完整技术方案（权威文档）
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 完整技术方案（推荐阅读）
 - [demos/fraud/demo_fraud.py](demos/fraud/demo_fraud.py) — 欺诈处理完整对话演示
+- [demos/rules/demo_rules.py](demos/rules/demo_rules.py) — docs/rules.md 多 Journey 策略演示
 
 ## 测试
 

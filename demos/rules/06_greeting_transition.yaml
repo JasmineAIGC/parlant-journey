@@ -1,0 +1,33 @@
+title: "策略6：问候/话题过渡"
+description: "docs/rules.md 中的问候/话题过渡策略代表场景：用户表达强烈不满，需要先安抚情绪。"
+
+conditions:
+  - "回复也太慢了，体验太差！"
+
+states:
+  - name: greeting_transition_decision
+    description: "输出问候/话题过渡策略 JSON"
+    chat_state: "当前仅处理 docs/rules.md 中的问候/话题过渡策略。"
+    canned_response:
+      strict: true
+      template: |
+        {
+          "first_layer_strategy": "问候/话题过渡",
+          "second_layer_strategy": "安抚用户不满情绪",
+          "selected_candidate_id": [],
+          "reasoning": "用户当前情绪明显不满，应先致歉安抚，再平稳过渡到后续处理或人工协助。",
+          "suggested_question": "",
+          "additional_guidance": "诚恳致歉，优先安抚情绪，并引导转接人工客服。"
+        }
+    guidelines:
+      - condition: "用户表达不满、抱怨或负面情绪"
+        action: "先共情安抚，再引导下一步处理"
+        priority: 95
+      - condition: "情绪类对话需要过渡回业务"
+        action: "保持礼貌友好，不与用户争辩"
+        priority: 80
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加额外说明"
+    priority: 100
