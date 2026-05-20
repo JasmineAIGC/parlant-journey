@@ -10,8 +10,9 @@ from tools.parlant_server.session import run_conversation
 
 
 class _FakeSessionModuleInstance:
-    def __init__(self, events):
+    def __init__(self, events, wait_exc=None):
         self._events = events
+        self._wait_exc = wait_exc
         self.wait_calls = []
 
     async def create(self, **kwargs):
@@ -22,13 +23,15 @@ class _FakeSessionModuleInstance:
 
     async def wait_for_more_events(self, **kwargs):
         self.wait_calls.append(kwargs)
+        if self._wait_exc is not None:
+            raise self._wait_exc
         return None
 
     async def find_events(self, **kwargs):
         return self._events
 
 
-def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events):
+def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events, *, wait_exc=None):
     class SessionModule:
         pass
 
@@ -67,7 +70,7 @@ def _install_parlant_core_stubs(monkeypatch: pytest.MonkeyPatch, events):
     monkeypatch.setitem(sys.modules, "parlant.core.sessions", fake_mod_sessions)
     monkeypatch.setitem(sys.modules, "parlant.core.customers", fake_mod_customers)
 
-    fake_instance = _FakeSessionModuleInstance(events=events)
+    fake_instance = _FakeSessionModuleInstance(events=events, wait_exc=wait_exc)
     fake_ctx = SimpleNamespace(
         server=SimpleNamespace(_container={SessionModule: fake_instance})
     )
@@ -89,16 +92,20 @@ async def test_run_conversation_reads_agent_message(monkeypatch: pytest.MonkeyPa
     wait_kwargs = fake_session_module.wait_calls[0]
     assert wait_kwargs["session_id"] == "s1"
     assert wait_kwargs["min_offset"] == 2
-    assert wait_kwargs["kinds"] is None
-    assert wait_kwargs["source"] is None
+    assert wait_kwargs["kinds"] == ["message"]
+    assert wait_kwargs["source"] == "ai_agent"
     assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)
 
 
 @pytest.mark.asyncio
-async def test_run_conversation_returns_empty_reply_when_no_agent_message(
+async def test_run_conversation_returns_empty_reply_on_wait_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    ctx, agent, fake_session_module = _install_parlant_core_stubs(monkeypatch, events=[])
+    ctx, agent, fake_session_module = _install_parlant_core_stubs(
+        monkeypatch,
+        events=[],
+        wait_exc=TimeoutError(),
+    )
 
     replies = []
     async for _user, reply in run_conversation(ctx, agent, ["你好"], timeout=3.0):
@@ -109,6 +116,6 @@ async def test_run_conversation_returns_empty_reply_when_no_agent_message(
     wait_kwargs = fake_session_module.wait_calls[0]
     assert wait_kwargs["session_id"] == "s1"
     assert wait_kwargs["min_offset"] == 2
-    assert wait_kwargs["kinds"] is None
-    assert wait_kwargs["source"] is None
+    assert wait_kwargs["kinds"] == ["message"]
+    assert wait_kwargs["source"] == "ai_agent"
     assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)

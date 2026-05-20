@@ -6,6 +6,7 @@ Parlant 多轮对话辅助函数。
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncGenerator, List, Tuple
 
 
@@ -13,7 +14,7 @@ async def run_conversation(
     ctx: Any,
     agent: Any,
     messages: List[str],
-    timeout: float = 300.0,
+    timeout: float = 45.0,
     title: str = "对话",
 ) -> AsyncGenerator[Tuple[str, str], None]:
     """
@@ -23,7 +24,7 @@ async def run_conversation(
         ctx:      ParlantServerContext 实例（已进入上下文）。
         agent:    Parlant Agent 对象（由 ``ctx.create_agent()`` 创建）。
         messages: 用户消息列表（每条消息触发一轮 Agent 回复）。
-        timeout:  等待 Agent 回复的超时秒数（默认 300s）。
+        timeout:  等待 Agent 回复的超时秒数（默认 45s）。
         title:    会话标题。
 
     Yields:
@@ -52,15 +53,17 @@ async def run_conversation(
         )
         next_offset = evt.offset + 1
 
-        # 不能只等 AI MESSAGE：processing cancelled 等非 MESSAGE 事件也表示本轮处理已结束，
-        # 若继续按 MESSAGE 过滤会在无回复场景里长时间阻塞直到超时。
-        await session_module.wait_for_more_events(
-            session_id=session.id,
-            min_offset=next_offset,
-            kinds=None,
-            source=None,
-            timeout=Timeout(timeout),
-        )
+        try:
+            await session_module.wait_for_more_events(
+                session_id=session.id,
+                min_offset=next_offset,
+                kinds=[EventKind.MESSAGE],
+                source=EventSource.AI_AGENT,
+                timeout=Timeout(timeout),
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            yield user_msg, ""
+            continue
 
         agent_events = await session_module.find_events(
             session_id=session.id,
