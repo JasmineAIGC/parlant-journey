@@ -4,25 +4,11 @@ tools.parlant_server.server
 
 无 UI 的 Parlant Server 上下文管理器。
 
-使用 Parlant 框架跑全流程时，默认会启动 HTTP Server 并打印 UI 链接。
-本模块通过"哨兵异常"技巧，在初始化完成后立即退出 Server 启动序列，
-实现**后台程序化运行，不弹出 UI 界面**。
-
 用法::
 
-    import asyncio
-    import parlant.sdk as p
-    from tools.parlant_server import ParlantServerContext
-    from journey import create_journey, JourneyConfig
-
-    async def main():
-        config = JourneyConfig(title="示例流程", ...)
-        async with ParlantServerContext() as ctx:
-            agent = await ctx.create_agent("my-agent", "示例 Agent")
-            await create_journey(agent, config)
-            # 在此处理业务逻辑……
-
-    asyncio.run(main())
+    async with ParlantServerContext() as ctx:
+        agent = await ctx.create_agent("my-agent", "描述")
+        # 在此处理业务逻辑
 """
 from __future__ import annotations
 
@@ -40,11 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class _ParlantSkipServerStart(Exception):
-    """
-    哨兵异常：以程序化方式退出 p.Server 上下文时传入，
-    令 p.Server.__aexit__ 走"有异常"分支（仅清理资源），
-    跳过实体评估（~20s）、uvicorn HTTP Server 启动和 UI 链接打印。
-    """
+    """哨兵异常：令 p.Server.__aexit__ 走清理分支，跳过 uvicorn 启动和 UI 链接打印。"""
 
 
 # ---------------------------------------------------------------------------
@@ -55,30 +37,13 @@ class ParlantServerContext:
     """
     无 UI 的 Parlant Server 上下文管理器。
 
-    **启动时初始化一次**，多轮业务逻辑复用。与直接使用 ``p.Server`` 相比，
-    此类会在 ``__aexit__`` 时通过哨兵异常绕过 uvicorn HTTP Server 启动，
-    程序不会打开浏览器、弹出 UI 界面，也不会打印 Sandbox UI 链接。
+    通过哨兵异常绕过 uvicorn HTTP Server 启动，适用于程序化运行场景。
 
-    典型用法::
+    用法::
 
         async with ParlantServerContext() as ctx:
             agent = await ctx.create_agent("fraud-agent", "欺诈处理 Agent")
-            await register_journeys(agent, [fraud_config, loan_config])
             # 在此处理对话或测试逻辑
-
-    若需要直接访问底层 ``p.Server`` 对象（例如调用 SDK 高级 API），
-    可通过 ``ctx.server`` 属性获取。
-
-    Args:
-        nlp_service:   NLP 服务类型（默认 ``p.NLPServices.litellm``）。
-                       传入 ``None`` 时使用 Parlant 默认值。
-        bridge_env:    是否自动桥接 LiteLLM 所需的环境变量（默认 ``True``）。
-                       通过 ``tools.llm.client.bridge_parlant_litellm_env`` 实现，
-                       将 ``QWEN3_*``/``LLM_*``/``OPENAI_*`` 回填为 ``LITELLM_PROVIDER_*``。
-
-    Raises:
-        RuntimeError: 若未安装 ``parlant``（pip install parlant）。
-        RuntimeError: 若未安装 ``torch``（Parlant LiteLLM 适配器依赖）。
     """
 
     def __init__(
@@ -142,15 +107,7 @@ class ParlantServerContext:
         return self._server
 
     async def create_agent(self, name: str, description: str = "") -> Any:
-        """在当前 Server 上创建一个 Parlant Agent。
-
-        Args:
-            name:        Agent 唯一名称。
-            description: Agent 描述（可选）。
-
-        Returns:
-            创建完成的 Parlant ``Agent`` 对象。
-        """
+        """在当前 Server 上创建一个 Parlant Agent。"""
         agent = await self.server.create_agent(name=name, description=description)
         logger.info("[ParlantServerContext] Agent 已创建  name=%s  id=%s", name, agent.id)
         return agent

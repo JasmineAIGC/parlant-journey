@@ -46,17 +46,19 @@ except ImportError:
 import pytest
 
 # ===========================================================================
-# ① journey/ 模块用法：加载 Journey 配置
+# journey/ 模块入口
 #
-#   Journey 配置有三种等价写法：
-#     a) 从文件加载    — load_journey("fraud.yaml")
-#     b) 流式 DSL     — JourneyDSL("欺诈处理").state(...).rule(...)
-#     c) 数据类构造   — JourneyConfig(title=..., states=[...], ...)
+# 三个核心 API：
+#   load_journey(path)              — 从 YAML/JSON 文件或 dict 加载 JourneyConfig
+#   create_journey(agent, config)   — 将单个 JourneyConfig 注册到 Parlant Agent
+#   register_journeys(agent, list)  — 批量注册多个 JourneyConfig
 # ===========================================================================
 
-from journey import load_journey  # noqa: E402
+from journey import create_journey, load_journey  # noqa: E402
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+# 从 YAML 文件加载欺诈处理对话流程配置（等价写法：JourneyDSL 或 JourneyConfig 直接构造）
 fraud_config = load_journey(os.path.join(_FIXTURES_DIR, "fraud.yaml"))
 
 # 模拟中风险欺诈场景对话脚本
@@ -81,22 +83,23 @@ async def run_demo() -> None:
     print(f"  状态：{' → '.join(s.name for s in fraud_config.states)}")
     print("=" * 65)
 
-    # ===========================================================================
-    # ② journey/ 模块用法：在 Parlant Agent 上注册 Journey
-    #
-    #   create_journey(agent, config)       — 注册单个 Journey
-    #   register_journeys(agent, [c1, c2])  — 批量注册多个 Journey
-    # ===========================================================================
-
-    from journey import create_journey  # 延迟导入，避免与 conftest.py 桩模块冲突
-
     try:
         async with ParlantServerContext() as ctx:
+            # 在 Parlant Server 上创建 Agent，作为 Journey 的运行载体
             agent = await ctx.create_agent("银行客服", "专业的银行客服 Agent，处理欺诈交易等业务")
-            await create_journey(agent, fraud_config)   # ← journey/ 核心调用
+
+            # ── journey/ 核心调用 ────────────────────────────────────────────
+            # create_journey 将 fraud_config 中的状态节点、状态转移、指南（guidelines）
+            # 逐一写入 Parlant Server；之后的对话由这些规则驱动 Agent 行为。
+            # 批量注册可用：from journey import register_journeys
+            #               await register_journeys(agent, [config1, config2])
+            await create_journey(agent, fraud_config)
+            # ────────────────────────────────────────────────────────────────
 
             print("\n─── 对话开始（Parlant Server 驱动）───")
             turn = 0
+            # run_conversation 是 tools/parlant_server 的对话驱动器，
+            # 按 DEMO_SCRIPT 逐条发送消息，逐轮 yield (user_msg, agent_reply) 元组
             async for user_msg, reply in run_conversation(
                 ctx, agent, DEMO_SCRIPT, title=f"演示：{fraud_config.title}"
             ):
@@ -131,13 +134,14 @@ async def test_fraud_demo_runs_full_conversation() -> None:
         except Exception as e:
             pytest.skip(f"LLM 服务不可达：{e}")
 
-    from journey import create_journey
-
     replies: List[str] = []
     try:
         async with ParlantServerContext() as ctx:
+            # 创建 Agent
             agent = await ctx.create_agent("银行客服", "专业银行客服 Agent")
-            await create_journey(agent, fraud_config)   # ← journey/ 核心调用
+            # 将 fraud_config 中的 Journey 注册到 Agent（状态、转移、指南全部写入 Parlant）
+            await create_journey(agent, fraud_config)
+            # 发送前两轮对话，收集 Agent 回复
             async for _user_msg, reply in run_conversation(ctx, agent, DEMO_SCRIPT[:2]):
                 replies.append(reply)
     except RuntimeError as e:

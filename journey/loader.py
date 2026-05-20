@@ -36,6 +36,7 @@ YAML 格式示例（参见 ``tests/fraud.yaml``）::
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -46,6 +47,8 @@ from .models import (
     StateConfig,
     TransitionConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -73,13 +76,16 @@ def load_journey(path: str) -> JourneyConfig:
         raise FileNotFoundError(f"配置文件不存在：{path}")
 
     ext = os.path.splitext(path)[1].lower()
+    logger.debug("[load_journey] 加载配置文件  path=%r  format=%s", path, "yaml" if ext in (".yaml", ".yml") else "json")
     with open(path, encoding="utf-8") as fh:
         if ext in (".yaml", ".yml"):
             data = _load_yaml(fh)
         else:
             data = json.load(fh)
 
-    return _parse(data)
+    config = _parse(data)
+    logger.debug("[load_journey] 加载完成  title=%r  states=%d", config.title, len(config.states))
+    return config
 
 
 def load_journey_dict(data: Dict[str, Any]) -> JourneyConfig:
@@ -96,7 +102,10 @@ def load_journey_dict(data: Dict[str, Any]) -> JourneyConfig:
     Raises:
         ValueError: 配置数据格式不合法。
     """
-    return _parse(data)
+    logger.debug("[load_journey_dict] 从字典解析配置")
+    config = _parse(data)
+    logger.debug("[load_journey_dict] 解析完成  title=%r  states=%d", config.title, len(config.states))
+    return config
 
 
 # ---------------------------------------------------------------------------

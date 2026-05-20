@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import types
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,10 @@ from tools.llm.client import (
     DEFAULT_MODEL,
     LLMClient,
     LLMConfig,
+    bridge_parlant_litellm_env,
+    _patch_litellm_embedding_encoding_format,
     _build_thinking_extra_body,
+    _infer_embedding_dimensions,
     _is_thinking_model,
     _needs_openai_prefix,
 )
@@ -142,6 +146,279 @@ class TestBuildThinkingExtraBody:
     def test_无base_url时放顶层(self):
         result = _build_thinking_extra_body(True, None)
         assert result == {"extra_body": {"enable_thinking": True}}
+
+
+class TestEmbeddingPatch:
+    @pytest.mark.asyncio
+    async def test_openai直连路径_usage为None时默认零(self, monkeypatch):
+        """响应中 usage=None 时，返回的 usage 应默认为零而非崩溃。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[0.1, 0.2], index=0)],
+                usage=None,
+            )
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="openai/Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+        )
+
+        # 响应结构满足 Parlant 的 response.data[i]["embedding"] 访问
+        assert result.data == [
+            {"object": "embedding", "embedding": [0.1, 0.2], "index": 0}
+        ]
+        # usage=None 时安全降级为全零
+        assert result.usage == {"prompt_tokens": 0, "total_tokens": 0}
+        client_ctor.assert_called_once_with(
+            api_key="EMPTY",
+            base_url="http://emb.local/v1",
+        )
+        create_mock.assert_awaited_once_with(
+            model="Qwen3-Embedding-8B",
+            input=["你好"],
+        )
+        original.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_openai直连路径_usage有值时正确读取(self, monkeypatch):
+        """响应中有实际 usage 时，应读取真实 token 数而非写死为零。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[0.5], index=0)],
+                usage=SimpleNamespace(prompt_tokens=7, total_tokens=7),
+            )
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="openai/Qwen3-Embedding-8B",
+            input=["你好"],
+            api_base="http://emb.local/v1",
+            api_key="EMPTY",
+        )
+
+        assert result.usage == {"prompt_tokens": 7, "total_tokens": 7}
+
+    @pytest.mark.asyncio
+    async def test_EMBEDDING_BASE_URL优先于kwargs中的api_base(self, monkeypatch):
+        """EMBEDDING_BASE_URL 环境变量优先级高于 Parlant 传入的 kwargs['api_base']（LLM URL）。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(
+            return_value=SimpleNamespace(
+                data=[SimpleNamespace(embedding=[1.0], index=0)],
+                usage=None,
+            )
+        )
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+        # EMBEDDING_BASE_URL 专用于嵌入服务（独立 vLLM 实例）
+        monkeypatch.setenv("EMBEDDING_BASE_URL", "http://emb-server.local/v1")
+
+        _patch_litellm_embedding_encoding_format()
+
+        await fake_litellm.aembedding(
+            model="Qwen3-Embedding-8B",
+            input=["你好"],
+            # Parlant 传入的是 LLM 服务地址，不应被当作 embedding 地址使用
+            api_base="http://wrong-llm-server.local/v1",
+            api_key="EMPTY",
+        )
+
+        # 应使用 EMBEDDING_BASE_URL，而非 kwargs 中的 api_base
+        client_ctor.assert_called_once_with(
+            api_key="EMPTY",
+            base_url="http://emb-server.local/v1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_openai直连失败时异常向上传递_不回退litellm(self, monkeypatch):
+        """api_base 已设置时，OpenAI 直连失败直接抛出，不静默回退到同样会失败的 litellm。"""
+        original = AsyncMock()
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+
+        create_mock = AsyncMock(side_effect=RuntimeError("embedding server unreachable"))
+        client_ctor = MagicMock(
+            return_value=SimpleNamespace(
+                embeddings=SimpleNamespace(create=create_mock)
+            )
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=client_ctor)
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        with pytest.raises(RuntimeError, match="embedding server unreachable"):
+            await fake_litellm.aembedding(
+                model="openai/Qwen3-Embedding-8B",
+                input=["你好"],
+                api_base="http://emb.local/v1",
+                api_key="EMPTY",
+            )
+
+        # litellm 回退路径不应被调用（调它也会失败）
+        original.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_无base_url时回退litellm并修复encoding_format(self, monkeypatch):
+        """无 base_url（云端 API）时回退 litellm，并把 encoding_format=None 改为 float。"""
+        original = AsyncMock(return_value="cloud-ok")
+        fake_litellm = types.SimpleNamespace(
+            aembedding=original,
+            _journey_emb_patched=False,
+        )
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        _patch_litellm_embedding_encoding_format()
+
+        result = await fake_litellm.aembedding(
+            model="text-embedding-ada-002",
+            input=["hello"],
+            encoding_format=None,
+            # 无 api_base、无 EMBEDDING_BASE_URL、无 LITELLM_PROVIDER_BASE_URL → 云端路径
+        )
+
+        assert result == "cloud-ok"
+        original.assert_awaited_once()
+        assert original.await_args.kwargs["encoding_format"] == "float"
+
+
+# ---------------------------------------------------------------------------
+# Embedding 向量维度推断 & bridge_parlant_litellm_env 维度自动设置
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingDimensionsBridge:
+    """验证 _infer_embedding_dimensions() 和 bridge_parlant_litellm_env() 的维度自动推断。
+
+    这是修复 nano_vectordb np.vstack 维度不匹配崩溃（1536 vs 4096）的核心逻辑。
+    """
+
+    def test_qwen3_embedding_8b推断为4096(self):
+        assert _infer_embedding_dimensions("Qwen3-Embedding-8B") == "4096"
+
+    def test_qwen3_embedding_8b含前缀推断为4096(self):
+        assert _infer_embedding_dimensions("openai/Qwen3-Embedding-8B") == "4096"
+
+    def test_qwen3_embedding泛名推断为4096(self):
+        assert _infer_embedding_dimensions("Qwen3-Embedding") == "4096"
+
+    def test_text_embedding_ada_002推断为1536(self):
+        assert _infer_embedding_dimensions("text-embedding-ada-002") == "1536"
+
+    def test_未知模型返回None(self):
+        assert _infer_embedding_dimensions("my-custom-embed-model") is None
+
+    def test_bridge_未配置维度时自动推断4096(self, monkeypatch):
+        """EMBEDDING_MODEL=Qwen3-Embedding-8B 且未设置维度时，bridge 应自动推断并设置 4096。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        monkeypatch.setenv("EMBEDDING_MODEL", "Qwen3-Embedding-8B")
+        # 清除所有可能干扰的维度变量
+        for key in ("EMBEDDING_DIMENSIONS", "QWEN3_EMBEDDING_DIMENSIONS",
+                    "LLM_EMBEDDING_DIMENSIONS", "LITELLM_EMBEDDING_DIMENSIONS"):
+            monkeypatch.delenv(key, raising=False)
+        # 清除可能已有的 LITELLM_EMBEDDING_MODEL_NAME，让 bridge 重新设置
+        monkeypatch.delenv("LITELLM_EMBEDDING_MODEL_NAME", raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        assert resolved.get("LITELLM_EMBEDDING_DIMENSIONS") == "4096"
+        assert os.environ["LITELLM_EMBEDDING_DIMENSIONS"] == "4096"
+
+    def test_bridge_显式维度配置优先于自动推断(self, monkeypatch):
+        """用户已设置 EMBEDDING_DIMENSIONS 时，bridge 必须使用用户值，不得覆盖。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        monkeypatch.setenv("EMBEDDING_MODEL", "Qwen3-Embedding-8B")
+        monkeypatch.setenv("EMBEDDING_DIMENSIONS", "2048")   # 用户强制指定
+        monkeypatch.delenv("LITELLM_EMBEDDING_DIMENSIONS", raising=False)
+        monkeypatch.delenv("LITELLM_EMBEDDING_MODEL_NAME", raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        # 用户显式配置的 2048 必须保留，不能被自动推断的 4096 覆盖
+        assert resolved.get("LITELLM_EMBEDDING_DIMENSIONS") == "2048"
+        assert os.environ["LITELLM_EMBEDDING_DIMENSIONS"] == "2048"
+
+    def test_bridge_无embedding模型时不推断维度(self, monkeypatch):
+        """未设置 EMBEDDING_MODEL 时，不应自动设置 LITELLM_EMBEDDING_DIMENSIONS。"""
+        fake_litellm = types.SimpleNamespace(aembedding=AsyncMock(), _journey_emb_patched=False)
+        fake_openai = types.SimpleNamespace(AsyncOpenAI=MagicMock())
+        monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+        for key in ("EMBEDDING_MODEL", "QWEN3_EMBEDDING_MODEL", "LLM_EMBEDDING_MODEL",
+                    "EMBEDDING_DIMENSIONS", "LITELLM_EMBEDDING_DIMENSIONS",
+                    "LITELLM_EMBEDDING_MODEL_NAME"):
+            monkeypatch.delenv(key, raising=False)
+
+        with patch(_LOAD_DOTENV_PATCH):
+            resolved = bridge_parlant_litellm_env()
+
+        assert "LITELLM_EMBEDDING_DIMENSIONS" not in resolved
 
 
 # ---------------------------------------------------------------------------
