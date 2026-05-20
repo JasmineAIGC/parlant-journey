@@ -52,6 +52,8 @@ async def run_conversation(
         )
         next_offset = evt.offset + 1
 
+        # 不能只等 AI MESSAGE：processing cancelled 等非 MESSAGE 事件也表示本轮处理已结束，
+        # 若继续按 MESSAGE 过滤会在无回复场景里长时间阻塞直到超时。
         await session_module.wait_for_more_events(
             session_id=session.id,
             min_offset=next_offset,

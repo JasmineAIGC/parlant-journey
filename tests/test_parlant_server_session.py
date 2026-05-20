@@ -87,8 +87,11 @@ async def test_run_conversation_reads_agent_message(monkeypatch: pytest.MonkeyPa
     assert replies == ["您好，我来帮您处理"]
     assert fake_session_module.wait_calls
     wait_kwargs = fake_session_module.wait_calls[0]
+    assert wait_kwargs["session_id"] == "s1"
+    assert wait_kwargs["min_offset"] == 2
     assert wait_kwargs["kinds"] is None
     assert wait_kwargs["source"] is None
+    assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)
 
 
 @pytest.mark.asyncio
@@ -104,5 +107,8 @@ async def test_run_conversation_returns_empty_reply_when_no_agent_message(
     assert replies == [""]
     assert fake_session_module.wait_calls
     wait_kwargs = fake_session_module.wait_calls[0]
+    assert wait_kwargs["session_id"] == "s1"
+    assert wait_kwargs["min_offset"] == 2
     assert wait_kwargs["kinds"] is None
     assert wait_kwargs["source"] is None
+    assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)
