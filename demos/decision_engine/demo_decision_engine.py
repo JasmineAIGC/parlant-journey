@@ -26,25 +26,39 @@ except ImportError:
 
 from journey import load_journey, register_journeys  # noqa: E402
 from tools.parlant_server import ParlantServerContext  # noqa: E402
+from tools.parlant_server.server import DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET  # noqa: E402
 from tools.parlant_server.session import run_conversation  # noqa: E402
 
 
 def _load_demo_port() -> int:
     raw_port = os.getenv("PARLANT_SERVER_PORT", "8800")
+    return _parse_port_value("PARLANT_SERVER_PORT", raw_port)
+
+
+def _load_demo_tool_service_port(main_port: int) -> int:
+    raw_port = os.getenv(
+        "PARLANT_TOOL_SERVICE_PORT",
+        str(main_port + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET),
+    )
+    return _parse_port_value("PARLANT_TOOL_SERVICE_PORT", raw_port)
+
+
+def _parse_port_value(env_name: str, raw_port: str) -> int:
     try:
         port = int(raw_port)
     except ValueError as exc:
         raise ValueError(
-            f"PARLANT_SERVER_PORT 必须为整数，当前值为: {raw_port!r}"
+            f"{env_name} 必须为整数，当前值为: {raw_port!r}"
         ) from exc
     if not 1 <= port <= 65535:
         raise ValueError(
-            f"PARLANT_SERVER_PORT 必须位于 1-65535 之间，当前值为: {port}"
+            f"{env_name} 必须位于 1-65535 之间，当前值为: {port}"
         )
     return port
 
 
 DEMO_PORT = _load_demo_port()
+DEMO_TOOL_SERVICE_PORT = _load_demo_tool_service_port(DEMO_PORT)
 DECISION_JOURNEY_FILES: List[str] = [
     "01_refusal.yaml",
     "02_user_terminate.yaml",
@@ -126,13 +140,17 @@ async def run_demo() -> None:
     print("  Journey 对话演示：银行智能呼叫中心战略决策引擎")
     print("  结论：docs/rules.md 对应的是 7 个策略 Journey，而不是一个单一流程")
     print(f"  Server Port：{DEMO_PORT}")
+    print(f"  Tool Service Port：{DEMO_TOOL_SERVICE_PORT}")
     print("=" * 72)
 
     for cfg in DECISION_JOURNEY_CONFIGS:
         print(f"  - {cfg.title}（states={len(cfg.states)} transitions={len(cfg.transitions)}）")
 
     try:
-        async with ParlantServerContext(port=DEMO_PORT) as ctx:
+        async with ParlantServerContext(
+            port=DEMO_PORT,
+            tool_service_port=DEMO_TOOL_SERVICE_PORT,
+        ) as ctx:
             agent = await ctx.create_agent(
                 "银行策略决策引擎",
                 "依据 docs/rules.md 输出银行呼叫中心策略决策 JSON",

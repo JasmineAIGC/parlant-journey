@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.parlant_server.server import ParlantServerConfig, ParlantServerContext
+from tools.parlant_server.server import (
+    DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET,
+    ParlantServerConfig,
+    ParlantServerContext,
+)
 
 
 class _FakeServerContextManager:
@@ -42,6 +46,7 @@ async def test_context_passes_explicit_port_to_server_factory(monkeypatch: pytes
 
     assert captured['nlp_service'] == 'litellm'
     assert captured['port'] == 9321
+    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
 
 
 @pytest.mark.asyncio
@@ -66,6 +71,34 @@ async def test_context_explicit_port_overrides_server_kwargs_port(monkeypatch: p
         pass
 
     assert captured['port'] == 9321
+    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+
+
+@pytest.mark.asyncio
+async def test_context_explicit_tool_service_port_overrides_derived_value(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {}
+
+    def fake_server_factory(**kwargs):
+        captured.update(kwargs)
+        return _FakeServerContextManager(captured)
+
+    monkeypatch.setattr(
+        'tools.parlant_server.server._import_parlant_sdk',
+        lambda: SimpleNamespace(NLPServices=SimpleNamespace(litellm='litellm')),
+    )
+
+    async with ParlantServerContext(
+        port=9321,
+        tool_service_port=9777,
+        bridge_env=False,
+        server_factory=fake_server_factory,
+    ):
+        pass
+
+    assert captured['port'] == 9321
+    assert captured['tool_service_port'] == 9777
 
 
 @pytest.mark.asyncio
@@ -84,6 +117,7 @@ async def test_context_supports_port_in_config(monkeypatch: pytest.MonkeyPatch):
     config = ParlantServerConfig(
         nlp_service='custom-nlp',
         port=9567,
+        tool_service_port=9599,
         server_factory=fake_server_factory,
     )
 
@@ -92,3 +126,4 @@ async def test_context_supports_port_in_config(monkeypatch: pytest.MonkeyPatch):
 
     assert captured['nlp_service'] == 'custom-nlp'
     assert captured['port'] == 9567
+    assert captured['tool_service_port'] == 9599

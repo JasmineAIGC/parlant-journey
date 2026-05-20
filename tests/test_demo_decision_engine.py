@@ -11,9 +11,12 @@ from demos.decision_engine.demo_decision_engine import (
     DECISION_JOURNEY_CONFIGS,
     DECISION_JOURNEY_FILES,
     DEMO_PORT,
+    DEMO_TOOL_SERVICE_PORT,
     DEMO_SCENARIOS,
+    _load_demo_tool_service_port,
     _load_demo_port,
 )
+from tools.parlant_server.server import DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
 
 
 def test_decision_engine_demo_loads_all_strategy_journeys() -> None:
@@ -39,6 +42,7 @@ def test_decision_engine_demo_loads_all_strategy_journeys() -> None:
 
 def test_decision_engine_demo_uses_multi_state_journeys() -> None:
     assert DEMO_PORT > 0
+    assert DEMO_TOOL_SERVICE_PORT == DEMO_PORT + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
     for cfg in DECISION_JOURNEY_CONFIGS:
         assert len(cfg.states) >= 3
         assert len(cfg.transitions) >= 2
@@ -70,3 +74,18 @@ def test_decision_engine_demo_out_of_range_port_env_raises(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="PARLANT_SERVER_PORT 必须位于 1-65535 之间"):
         _load_demo_port()
+
+
+def test_decision_engine_demo_can_override_tool_service_port(monkeypatch) -> None:
+    monkeypatch.setenv("PARLANT_TOOL_SERVICE_PORT", "9788")
+
+    assert _load_demo_tool_service_port(8765) == 9788
+
+
+def test_decision_engine_demo_invalid_tool_service_port_env_raises(monkeypatch) -> None:
+    monkeypatch.setenv("PARLANT_TOOL_SERVICE_PORT", "bad-port")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="PARLANT_TOOL_SERVICE_PORT 必须为整数"):
+        _load_demo_tool_service_port(8765)

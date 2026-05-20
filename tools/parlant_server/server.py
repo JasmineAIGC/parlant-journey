@@ -12,6 +12,12 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PARLANT_PORT = 8800
+DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8818
+DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET = (
+    DEFAULT_PARLANT_TOOL_SERVICE_PORT - DEFAULT_PARLANT_PORT
+)
+
 
 class _ParlantSkipServerStart(Exception):
     """哨兵异常：令 p.Server.__aexit__ 走清理分支，跳过 uvicorn 启动和 UI 链接打印。"""
@@ -23,6 +29,7 @@ class ParlantServerConfig:
 
     nlp_service: Any = None
     port: Optional[int] = None
+    tool_service_port: Optional[int] = None
     prepare_environment: Optional[Callable[[], Any]] = None
     server_factory: Optional[Callable[..., Any]] = None
     server_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +49,7 @@ class ParlantServerContext:
         *,
         config: Optional[ParlantServerConfig] = None,
         port: Optional[int] = None,
+        tool_service_port: Optional[int] = None,
         prepare_environment: Optional[Callable[[], Any]] = None,
         server_factory: Optional[Callable[..., Any]] = None,
         server_kwargs: Optional[dict[str, Any]] = None,
@@ -53,6 +61,7 @@ class ParlantServerContext:
             bridge_env: 若为 True 且未显式提供 ``prepare_environment``，则自动桥接项目中的 LLM 环境变量。
             config: 可选的完整 ``ParlantServerConfig``；提供后优先使用。
             port: 显式指定 Parlant Server 监听端口；当同时提供 ``server_kwargs['port']`` 时，以此参数为准。
+            tool_service_port: 显式指定内置 Tool Service 监听端口；未提供时，若设置了 ``port``，则自动按默认偏移量派生。
             prepare_environment: 进入上下文前执行的环境准备函数。
             server_factory: 自定义 Server 工厂，默认使用 ``parlant.sdk.Server``。
             server_kwargs: 传递给底层 Server 的额外关键字参数。
@@ -63,6 +72,7 @@ class ParlantServerContext:
             config = ParlantServerConfig(
                 nlp_service=nlp_service,
                 port=port,
+                tool_service_port=tool_service_port,
                 prepare_environment=prepare_environment,
                 server_factory=server_factory,
                 server_kwargs=dict(server_kwargs or {}),
@@ -83,13 +93,17 @@ class ParlantServerContext:
 
         server_factory = self._config.server_factory or p.Server
         server_kwargs = dict(self._config.server_kwargs)
-        if self._config.port is not None:
-            server_kwargs["port"] = self._config.port
+        port, tool_service_port = self._resolve_ports(server_kwargs)
+        if port is not None:
+            server_kwargs["port"] = port
+        if tool_service_port is not None:
+            server_kwargs["tool_service_port"] = tool_service_port
 
         logger.info(
-            "[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s  port=%s",
+            "[ParlantServerContext] 启动 Parlant Server（无 UI）  nlp=%s  port=%s  tool_service_port=%s",
             nlp_service,
             server_kwargs.get("port", "default"),
+            server_kwargs.get("tool_service_port", "default"),
         )
         self._server_ctx = server_factory(nlp_service=nlp_service, **server_kwargs)
         self._server = await self._server_ctx.__aenter__()
@@ -131,6 +145,27 @@ class ParlantServerContext:
         agent = await self.server.create_agent(**kwargs)
         logger.info("[ParlantServerContext] Agent 已创建  name=%s  id=%s", kwargs["name"], agent.id)
         return agent
+
+    def _resolve_ports(
+        self,
+        server_kwargs: dict[str, Any],
+    ) -> tuple[Optional[int], Optional[int]]:
+        port = self._config.port
+        if port is None and "port" in server_kwargs:
+            raw_port = server_kwargs["port"]
+            port = raw_port if isinstance(raw_port, int) else None
+
+        tool_service_port = self._config.tool_service_port
+        if tool_service_port is None and "tool_service_port" in server_kwargs:
+            raw_tool_service_port = server_kwargs["tool_service_port"]
+            tool_service_port = (
+                raw_tool_service_port if isinstance(raw_tool_service_port, int) else None
+            )
+
+        if tool_service_port is None and port is not None:
+            tool_service_port = port + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+
+        return port, tool_service_port
 
 
 def _default_prepare_environment() -> Any:
