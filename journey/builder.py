@@ -170,8 +170,19 @@ class JourneyBuilder:
 
             if not progressed:
                 unresolved = sorted({t.source for t in next_pending})
+                # 若所有 source 均无入边（即所有 source 都是 DAG 根且未被登记），
+                # 则说明 transitions 中存在与已知根节点不连通的孤立边；
+                # 否则是 source 互相依赖形成循环。
+                all_sources = {t.source for t in next_pending}
+                all_target_of_pending = {t.target for t in next_pending}
+                is_cycle = bool(all_sources & all_target_of_pending)
+                if is_cycle:
+                    raise ValueError(
+                        "无法解析 transitions：存在循环依赖（相关状态互为彼此的 target）。"
+                        f"涉及状态：{', '.join(unresolved)}"
+                    )
                 raise ValueError(
-                    "无法解析 transitions：存在循环依赖，或出现与根状态不连通的边。"
+                    "无法解析 transitions：存在与根状态不连通的边（source 状态从未被创建）。"
                     f"未就绪源状态：{', '.join(unresolved)}"
                 )
             pending = next_pending

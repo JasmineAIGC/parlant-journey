@@ -12,7 +12,7 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Parlant 默认端口：主 Server 默认 8800，内置 Tool Service 默认 8818
+# Parlant 默认端口：主 Server 默认 8001，内置 Tool Service 默认 8002
 DEFAULT_PARLANT_PORT = 8001
 DEFAULT_PARLANT_TOOL_SERVICE_PORT = 8002
 
