@@ -1,0 +1,72 @@
+title: "策略3：确认/追问"
+description: "面向开户资质、开户所需资料、开户流程及密码相关四类意图下关键信息缺失场景的完整流程：识别核心意图、定位缺失字段、单轮只追问一个最高优先级问题、等待后续补充。"
+
+conditions:
+  - "我想了解开户条件"
+  - "开户需要什么条件"
+  - "我可以开户吗"
+  - "开户需要准备哪些材料"
+  - "需要带什么证件来开户"
+  - "开户流程是什么"
+  - "怎么开一个账户"
+  - "密码忘了怎么办"
+  - "如何修改我的密码"
+  - "我想开 Star One 账户，需要什么条件"
+  - "普通账户和 Star One 账户开户条件有什么区别"
+
+states:
+  - name: intake_and_decision
+    description: "识别核心意图与缺失字段，输出确认/追问策略 JSON"
+    chat_state: "结合用户意图、当前 user_space 与知识前提，判断是否必须先追问关键信息，依据意图类型确定追问优先级最高的单个字段。"
+    canned_response:
+      strict: false
+      template: |
+        {
+          "first_layer_strategy": "确认/追问",
+          "second_layer_strategy": "核实具体业务关键信息",
+          "selected_candidate_id": [],
+          "reasoning": "<简洁说明：1.用户意图分析；2.缺失的关键字段及原因；3.追问优先级判断>",
+          "suggested_question": "<按优先级仅写单个追问问题，如：请问您是日本国籍吗？>",
+          "additional_guidance": "单次只追问一个问题，不要同时提出多个问题。"
+        }
+    guidelines:
+      - condition: "用户核心意图明确，但办理所需关键信息缺失"
+        action: "只追问一个最高优先级的问题"
+        priority: 100
+      - condition: "核心意图为开户资质，用户国籍或办理网点信息缺失"
+        action: "优先核实国籍，再确认办理网点"
+        priority: 92
+      - condition: "核心意图为开户所需资料，用户国籍或永住者状态缺失"
+        action: "先追问国籍，非日本籍需额外确认是否为永住者"
+        priority: 90
+      - condition: "核心意图为开户流程，办理网点不明或账户类型未确认"
+        action: "先核实办理网点，再确认账户类型"
+        priority: 88
+      - condition: "核心意图为密码相关，密码类型未知"
+        action: "先追问密码类型（网银密码 / 卡密码 / 其他）"
+        priority: 85
+      - condition: "现有知识不足以直接回答"
+        action: "禁止直接作答或臆测用户情况"
+        priority: 80
+  - name: wait_for_user_info
+    description: "等待用户补充缺失信息"
+    chat_state: "在提出单个关键问题后，等待用户补充信息，不要连续追问多个字段。"
+  - name: resume_decision
+    description: "收到补充信息后恢复后续策略判断"
+    chat_state: "用户补充完关键信息后，再决定进入直接作答、拒绝回答或继续追问。"
+
+transitions:
+  - source: intake_and_decision
+    target: wait_for_user_info
+    condition: "已提出单个最高优先级追问"
+  - source: wait_for_user_info
+    target: resume_decision
+    condition: "已收到用户补充信息"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "需要追问时"
+    action: "单轮只允许一个问题，问题必须指向用户自身缺失的关键信息（如国籍、年龄、网点等），禁止将知识库产品内容本身作为追问依据"
+    priority: 95

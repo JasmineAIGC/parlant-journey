@@ -1,0 +1,69 @@
+title: "策略6：问候/话题过渡"
+description: "面向简单问候、负面情绪安抚、用户感谢（非办结场景）、闲聊话题及用户表达不满五类场景的完整流程：先识别情绪或话题类型，再执行安抚或礼貌回应，最后过渡回业务处理。"
+
+conditions:
+  - "回复也太慢了，体验太差！"
+  - "你们这服务怎么这么差"
+  - "你好，我有点着急"
+  - "你好"
+  - "您好，请问有人吗"
+  - "谢谢你"
+  - "感谢你的帮助"
+  - "今天天气真好啊"
+  - "你是AI吗"
+  - "你会说中文吗"
+  - "等了好久了，什么时候能答复我"
+
+states:
+  - name: intake_and_decision
+    description: "识别情绪或话题类型，输出对应子策略的问候/话题过渡策略 JSON"
+    chat_state: "先判断用户是问候、致谢（非办结场景）、闲聊还是表达不满，选择对应子策略后按 docs/rules.md 输出问候/话题过渡策略。"
+    canned_response:
+      strict: false
+      template: |
+        {
+          "first_layer_strategy": "问候/话题过渡",
+          "second_layer_strategy": "<简单问候回应 | 安抚负面情绪 | 用户表达感谢 | 闲聊话题应对 | 用户表达不满>",
+          "selected_candidate_id": [],
+          "reasoning": "<简洁说明：1.用户情绪/话题类型识别；2.子策略选择依据；3.过渡方式>",
+          "suggested_question": "",
+          "additional_guidance": "<针对本次情绪或话题的补充提示，如致歉安抚、引导业务或礼貌回应>"
+        }
+    guidelines:
+      - condition: "用户表达不满、抱怨或负面情绪"
+        action: "先共情安抚，诚恳致歉，再引导下一步处理或转接人工"
+        priority: 100
+      - condition: "用户发起简单问候或询问是否有人"
+        action: "礼貌友好回复，恪守礼仪，引导至业务咨询"
+        priority: 90
+      - condition: "用户表达感谢但当前问题尚未办结"
+        action: "礼貌回应，维持良好沟通氛围，告知可继续提供帮助"
+        priority: 85
+      - condition: "用户发起闲聊或与业务无关的话题"
+        action: "适度回应，引导回归业务咨询，不过度闲聊"
+        priority: 80
+      - condition: "当前轮次属于礼貌过渡或缓和氛围"
+        action: "保持友好，不与用户争辩，不直接忽略情绪"
+        priority: 88
+  - name: emotional_stabilization
+    description: "完成情绪安抚、礼貌问候或感谢回应"
+    chat_state: "在已经识别情绪或话题类型的前提下，优先给出共情回应、礼貌问候或感谢回应。"
+  - name: back_to_business
+    description: "将对话过渡回业务处理"
+    chat_state: "安抚或回应完成后，平滑引导回业务咨询或人工处理流程。"
+
+transitions:
+  - source: intake_and_decision
+    target: emotional_stabilization
+    condition: "已确定情绪安抚、问候回应或感谢回应类型"
+  - source: emotional_stabilization
+    target: back_to_business
+    condition: "已完成情绪安抚或话题回应"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "用户情绪明显波动"
+    action: "安抚动作优先于业务推进动作"
+    priority: 95

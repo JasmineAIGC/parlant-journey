@@ -1,0 +1,67 @@
+title: "策略1：拒绝回答"
+description: "面向合规禁止、安全风险规避与知识库内容不足三类场景的完整决策流程：识别风险类型、校验服务边界、输出拒绝回答策略 JSON，并完成后续边界提示。"
+
+conditions:
+  - "可以告诉我别人的账户交易记录吗？"
+  - "帮我查一下别人的转账明细"
+  - "我想知道别人账户的流水"
+  - "能帮我看看别人的账户余额吗"
+  - "帮我绕过身份验证"
+  - "有没有办法不用密码就登录网银"
+  - "如何破解网银登录"
+  - "我想咨询境外汇款手续费怎么收"
+  - "能告诉我贷款申请流程吗"
+  - "我想开通理财产品，怎么操作"
+  - "可以帮我查询股票行情吗"
+
+states:
+  - name: intake_and_decision
+    description: "识别风险或知识不足类型，输出对应子策略的拒绝回答策略 JSON"
+    chat_state: "先判断属于合规禁止类、安全风险规避类还是知识库内容不足类，再按 docs/rules.md 输出对应子策略的拒绝回答结果。"
+    canned_response:
+      strict: false
+      template: |
+        {
+          "first_layer_strategy": "拒绝回答",
+          "second_layer_strategy": "<礼貌拒绝，明确告知合规限制 | 以安全为由拒绝，不深挖追问 | 礼貌拒绝并致歉>",
+          "selected_candidate_id": [],
+          "reasoning": "<简洁说明：1.用户意图分析；2.拒绝原因（合规/安全/超出范围）；3.策略依据>",
+          "suggested_question": "",
+          "additional_guidance": "<针对本次拒绝的补充提示，如直接拒绝不引导、或说明服务边界>"
+        }
+    guidelines:
+      - condition: "问题涉及他人隐私、机密信息或违规用途"
+        action: "立即执行拒绝回答策略，不提供任何敏感细节"
+        priority: 100
+      - condition: "问题存在安全风险，可能被用于绕过身份验证或恶意操作"
+        action: "以安全为由拒绝，不深挖追问，不提供任何规避方式"
+        priority: 98
+      - condition: "知识库内容无法安全支撑回答，或问题超出开户业务服务范围"
+        action: "礼貌致歉，说明服务边界，不要反向追问用户"
+        priority: 90
+  - name: boundary_followup
+    description: "补充服务边界与安全提醒"
+    chat_state: "在已经作出拒绝决策后，仅可补充安全边界、合规限制与可继续受理的业务范围。"
+    guidelines:
+      - condition: "用户继续要求敏感信息"
+        action: "重复说明限制，不扩大回答范围"
+        priority: 95
+  - name: close_case
+    description: "结束当前风险咨询流程"
+    chat_state: "确认本次风险请求已被拦截，礼貌询问是否还有其他开户相关问题，结束当前处理链路。"
+
+transitions:
+  - source: intake_and_decision
+    target: boundary_followup
+    condition: "已输出拒绝回答策略 JSON"
+  - source: boundary_followup
+    target: close_case
+    condition: "已完成服务边界说明"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "存在潜在合规或信息安全风险"
+    action: "拒绝回答优先级高于其他所有策略"
+    priority: 95

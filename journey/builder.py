@@ -125,45 +125,67 @@ class JourneyBuilder:
             self._state_obj_map[root_name] = root_trans.target
             logger.debug("[JourneyBuilder] 根状态已创建  state=%r", root_name)
 
-        # ── 按拓扑顺序处理所有转移边 ─────────────────────────────────
-        for trans in self._config.transitions:
-            source_obj = self._state_obj_map.get(trans.source)
-            if source_obj is None:
-                raise ValueError(
-                    f"转移的源状态 '{trans.source}' 尚未创建。"
-                    "请确保 JourneyConfig.transitions 按拓扑顺序排列。"
+        # ── 处理所有转移边（支持任意顺序；若无可推进边则判定为循环/断连） ─────────
+        pending = list(self._config.transitions)
+        while pending:
+            progressed = False
+            next_pending = []
+            for trans in pending:
+                source_obj = self._state_obj_map.get(trans.source)
+                if source_obj is None:
+                    next_pending.append(trans)
+                    continue
+
+                # 有条件转移时携带 condition 参数
+                condition_kwargs: Dict[str, Any] = (
+                    {"condition": trans.condition} if trans.condition is not None else {}
                 )
 
-            # 有条件转移时携带 condition 参数
-            condition_kwargs: Dict[str, Any] = (
-                {"condition": trans.condition} if trans.condition is not None else {}
-            )
-
-            if trans.target in self._state_obj_map:
-                # 汇聚场景：目标状态已存在，直接复用（不重复创建）
-                logger.debug(
-                    "[JourneyBuilder] 复用已有状态（汇聚）  %r → %r  condition=%r",
-                    trans.source, trans.target, trans.condition,
-                )
-                await source_obj.transition_to(
-                    state=self._state_obj_map[trans.target],
-                    **condition_kwargs,
-                )
-            else:
-                # 普通场景：目标状态尚不存在，通过 transition_to 创建
-                target_cfg = self._state_cfg_map.get(trans.target)
-                if target_cfg is None:
-                    raise ValueError(
-                        f"目标状态 '{trans.target}' 没有对应的 StateConfig。"
-                        "请确保 JourneyConfig.states 中包含所有在 transitions 中出现的状态。"
+                if trans.target in self._state_obj_map:
+                    # 汇聚场景：目标状态已存在，直接复用（不重复创建）
+                    logger.debug(
+                        "[JourneyBuilder] 复用已有状态（汇聚）  %r → %r  condition=%r",
+                        trans.source, trans.target, trans.condition,
                     )
-                kwargs = self._build_state_kwargs(target_cfg, **condition_kwargs)
-                new_trans = await source_obj.transition_to(**kwargs)
-                self._state_obj_map[trans.target] = new_trans.target
-                logger.debug(
-                    "[JourneyBuilder] 状态已创建  %r → %r  condition=%r",
-                    trans.source, trans.target, trans.condition,
+                    await source_obj.transition_to(
+                        state=self._state_obj_map[trans.target],
+                        **condition_kwargs,
+                    )
+                else:
+                    # 普通场景：目标状态尚不存在，通过 transition_to 创建
+                    target_cfg = self._state_cfg_map.get(trans.target)
+                    if target_cfg is None:
+                        raise ValueError(
+                            f"目标状态 '{trans.target}' 没有对应的 StateConfig。"
+                            "请确保 JourneyConfig.states 中包含所有在 transitions 中出现的状态。"
+                        )
+                    kwargs = self._build_state_kwargs(target_cfg, **condition_kwargs)
+                    new_trans = await source_obj.transition_to(**kwargs)
+                    self._state_obj_map[trans.target] = new_trans.target
+                    logger.debug(
+                        "[JourneyBuilder] 状态已创建  %r → %r  condition=%r",
+                        trans.source, trans.target, trans.condition,
+                    )
+                progressed = True
+
+            if not progressed:
+                unresolved = sorted({t.source for t in next_pending})
+                # 若所有 source 均无入边（即所有 source 都是 DAG 根且未被登记），
+                # 则说明 transitions 中存在与已知根节点不连通的孤立边；
+                # 否则是 source 互相依赖形成循环。
+                all_sources = {t.source for t in next_pending}
+                all_target_of_pending = {t.target for t in next_pending}
+                is_cycle = bool(all_sources & all_target_of_pending)
+                if is_cycle:
+                    raise ValueError(
+                        "无法解析 transitions：存在循环依赖（相关状态互为彼此的 target）。"
+                        f"涉及状态：{', '.join(unresolved)}"
+                    )
+                raise ValueError(
+                    "无法解析 transitions：存在与根状态不连通的边（source 状态从未被创建）。"
+                    f"未就绪源状态：{', '.join(unresolved)}"
                 )
+            pending = next_pending
 
     # ------------------------------------------------------------------
     # 步骤④：注册节点级行为规则
@@ -241,7 +263,38 @@ class JourneyBuilder:
         return kwargs
 
     def _validate_config(self) -> None:
+        if not self._config.title:
+            raise ValueError("JourneyConfig.title 不能为空。")
+        if not self._config.states:
+            raise ValueError("JourneyConfig.states 不能为空。")
+
         state_names = [state.name for state in self._config.states]
         duplicated = sorted({name for name in state_names if state_names.count(name) > 1})
         if duplicated:
             raise ValueError(f"JourneyConfig.states 中存在重复状态名：{', '.join(duplicated)}")
+
+        state_name_set = set(state_names)
+        unknown_sources = sorted(
+            {t.source for t in self._config.transitions if t.source not in state_name_set}
+        )
+        unknown_targets = sorted(
+            {t.target for t in self._config.transitions if t.target not in state_name_set}
+        )
+        if unknown_sources or unknown_targets:
+            fragments = []
+            if unknown_sources:
+                fragments.append(f"未知 source: {', '.join(unknown_sources)}")
+            if unknown_targets:
+                fragments.append(f"未知 target: {', '.join(unknown_targets)}")
+            raise ValueError("JourneyConfig.transitions 引用了未定义状态；" + "；".join(fragments))
+
+        invalid_states = [
+            s.name
+            for s in self._config.states
+            if s.chat_state is not None and s.tool_state is not None
+        ]
+        if invalid_states:
+            raise ValueError(
+                "单个状态不能同时设置 chat_state 与 tool_state："
+                + ", ".join(sorted(invalid_states))
+            )

@@ -19,7 +19,7 @@ tools.parlant_server
             print(f"用户: {user_msg}")
             print(f"Agent: {reply}")
 """
-from .server import ParlantServerConfig, ParlantServerContext
+from .server import ParlantServerConfig, ParlantServerContext, DEFAULT_PARLANT_PORT, DEFAULT_PARLANT_TOOL_SERVICE_PORT
 from .session import run_conversation
 
-__all__ = ["ParlantServerConfig", "ParlantServerContext", "run_conversation"]
+__all__ = ["ParlantServerConfig", "ParlantServerContext", "DEFAULT_PARLANT_PORT", "DEFAULT_PARLANT_TOOL_SERVICE_PORT", "run_conversation"]

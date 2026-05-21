@@ -1,30 +1,43 @@
 title: "策略2：用户主动终止咨询"
-description: "面向用户主动结束咨询场景的完整流程：识别终止意愿、确认是否仍有其他需求、礼貌收尾。"
+description: "面向用户主动结束咨询、回避问题或切换话题三类场景的完整流程：识别终止/回避/切换意愿、确认是否仍有其他需求、礼貌收尾。"
 
 conditions:
   - "我先不办了，就这样吧"
   - "先到这里吧"
   - "这个问题先不用继续了"
+  - "这个我不太方便讲"
+  - "算了，这个先不说了"
+  - "换个话题吧"
+  - "我换一个问题问你"
+  - "那个先放一边，我想问别的"
+  - "不用了，我自己再想想"
+  - "先这样吧，我回去再看看"
 
 states:
   - name: intake_and_decision
-    description: "识别用户终止意愿并输出用户主动终止咨询策略 JSON"
-    chat_state: "结合用户当前表述与 intent_status，判断是否需要结束当前咨询流程。"
+    description: "识别终止意愿、回避行为或话题切换，输出用户主动终止咨询策略 JSON"
+    chat_state: "结合用户当前表述与 intent_status，判断是主动提出结束、回避问题还是切换话题，选择对应子策略。"
     canned_response:
-      strict: true
+      strict: false
       template: |
         {
           "first_layer_strategy": "用户主动终止咨询",
-          "second_layer_strategy": "用户主动提出结束",
+          "second_layer_strategy": "<用户主动提出结束 | 用户回避问题 | 用户切换话题>",
           "selected_candidate_id": [],
-          "reasoning": "用户明确表示不再继续办理并希望结束当前咨询，应尊重用户意愿，执行用户主动终止咨询策略。",
+          "reasoning": "<简洁说明：1.用户意图分析；2.判断依据（明确结束/回避/切换）；3.策略匹配>",
           "suggested_question": "",
-          "additional_guidance": "确认终止意愿，礼貌询问是否还有其他需求。"
+          "additional_guidance": "<针对本次终止场景的补充提示，如礼貌询问是否有其他需求>"
         }
     guidelines:
       - condition: "用户明确表达结束、暂停或放弃办理"
         action: "不要继续推进原业务流程，优先执行终止咨询策略"
         priority: 100
+      - condition: "用户回避问题或表示不方便透露信息"
+        action: "表示理解，不追问敏感信息，礼貌询问是否有其他问题"
+        priority: 90
+      - condition: "用户突然切换话题"
+        action: "顺势承接新话题，自然过渡对话，不强行拉回原话题"
+        priority: 80
       - condition: "用户虽然结束当前问题，但仍可能有其他需求"
         action: "礼貌询问是否需要其他帮助"
         priority: 85
@@ -38,7 +51,7 @@ states:
 transitions:
   - source: intake_and_decision
     target: confirm_other_needs
-    condition: "已识别用户主动结束当前咨询"
+    condition: "已识别用户主动结束、回避或切换话题"
   - source: confirm_other_needs
     target: polite_closing
     condition: "已完成其他需求确认"

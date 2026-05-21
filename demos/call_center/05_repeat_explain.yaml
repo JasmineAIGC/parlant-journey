@@ -1,0 +1,65 @@
+title: "策略5：重复说明"
+description: "面向用户未理解、重复提问或要求强化关键信息四类场景的完整流程：识别理解障碍类型、沿用原知识重述、简化表达并强化关键点。"
+
+conditions:
+  - "你再说简单一点，我还是没听懂哪一种办理速度最快"
+  - "这个我没听懂，你再解释一次"
+  - "你刚才说得太复杂了"
+  - "你再说一遍"
+  - "刚才那个我没听清楚"
+  - "最重要的地方是什么"
+  - "你帮我重点强调一下"
+  - "刚才说的我还是不明白"
+  - "能不能说得更简单一点"
+  - "我没太理解，能再说一次吗"
+
+states:
+  - name: intake_and_decision
+    description: "识别用户理解障碍类型并输出重复说明策略 JSON"
+    chat_state: "判断用户是表示无法理解、重复提问、要求简化还是要求强化关键点，选择对应子策略。"
+    canned_response:
+      strict: false
+      template: |
+        {
+          "first_layer_strategy": "重复说明",
+          "second_layer_strategy": "<用户表示无法理解 | 用户重复提问 | 内容复杂需简化 | 重点内容强化>",
+          "selected_candidate_id": ["<沿用上一轮已使用的知识ID，无则填空数组>"],
+          "reasoning": "<简洁说明：1.用户反馈分析（无法理解/重复/要求简化/强化）；2.沿用原知识的说明；3.策略依据>",
+          "suggested_question": "",
+          "additional_guidance": "<重述方式调整说明，如：改用更口语简短表述、或重点强调关键结论>"
+        }
+    guidelines:
+      - condition: "用户表示没有理解或要求重新解释"
+        action: "继续使用原有知识，但要更换表达方式"
+        priority: 100
+      - condition: "用户重复相同问题"
+        action: "提示已作答，更换角度补充说明，避免原文照抄"
+        priority: 92
+      - condition: "复杂信息需要简化"
+        action: "拆分要点、突出结论、避免引入新概念"
+        priority: 90
+      - condition: "用户要求强调或重申关键结论"
+        action: "重申用户遗漏的关键信息，突出最重要的结论"
+        priority: 85
+  - name: simplify_message
+    description: "简化原有说明话术"
+    chat_state: "将复杂说明拆成更短、更易理解的句子，保持信息准确。"
+  - name: reinforce_key_points
+    description: "强化用户最容易忽略的关键结论"
+    chat_state: "在完成简化说明后，重复最关键的结论与对比结果。"
+
+transitions:
+  - source: intake_and_decision
+    target: simplify_message
+    condition: "已识别需要重复说明"
+  - source: simplify_message
+    target: reinforce_key_points
+    condition: "已完成简化表达"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "进入重复说明策略"
+    action: "只能重述已有知识，不能编造新的解释内容"
+    priority: 95

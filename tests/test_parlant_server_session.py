@@ -16,12 +16,13 @@ class _FakeSessionModuleInstance:
         self._wait_exc = wait_exc
         self._wait_delay = wait_delay
         self.wait_calls = []
+        self.wait_completion_calls = []
 
     async def create(self, **kwargs):
         return SimpleNamespace(id="s1")
 
     async def create_customer_message(self, **kwargs):
-        return SimpleNamespace(offset=1)
+        return SimpleNamespace(id="e1", offset=1)
 
     async def wait_for_more_events(self, **kwargs):
         self.wait_calls.append(kwargs)
@@ -33,6 +34,10 @@ class _FakeSessionModuleInstance:
 
     async def find_events(self, **kwargs):
         return self._events
+
+    async def wait_for_event_completion(self, **kwargs):
+        self.wait_completion_calls.append(kwargs)
+        return True
 
 
 def _install_parlant_core_stubs(
@@ -109,6 +114,11 @@ async def test_run_conversation_reads_agent_message(monkeypatch: pytest.MonkeyPa
     assert wait_kwargs["kinds"] == ["message"]
     assert wait_kwargs["source"] == "ai_agent"
     assert float(wait_kwargs["timeout"]) == pytest.approx(3.0)
+    assert fake_session_module.wait_completion_calls
+    completion_wait_kwargs = fake_session_module.wait_completion_calls[0]
+    assert completion_wait_kwargs["session_id"] == "s1"
+    assert completion_wait_kwargs["event_id"] == "e1"
+    assert float(completion_wait_kwargs["timeout"]) == pytest.approx(3.0)
 
 
 @pytest.mark.asyncio

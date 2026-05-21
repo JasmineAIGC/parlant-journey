@@ -1,0 +1,73 @@
+title: "策略4：直接作答"
+description: "面向知识充分、问题清晰场景的完整流程：覆盖常规问题解答、多问题拆分、产品推荐、操作指引、资质告知及转接人工七类子场景；确认问题范围、选择高度相关知识、输出直接作答策略 JSON，并补充结构化答复要点。"
+
+conditions:
+  - "哪一种办理速度最快？"
+  - "线下、邮寄和线上开户哪个最快"
+  - "请直接告诉我最快的开户方式"
+  - "Star One账户和普通账户有什么区别"
+  - "哪款账户更适合我"
+  - "怎么使用网上银行查询余额"
+  - "如何设置每日交易限额"
+  - "我已满18岁且是日本国籍，可以开户吗"
+  - "我是日本国籍，年满18岁，符合开户条件吗"
+  - "帮我接人工客服"
+  - "我要转人工处理"
+  - "我想要人工服务"
+
+states:
+  - name: intake_and_decision
+    description: "确认问题清晰且知识充足，输出对应子策略的直接作答策略 JSON"
+    chat_state: "先确认用户问题是否清晰、知识是否完整，再按 docs/rules.md 判断属于哪个子场景（常规解答、产品推荐、操作指引、资质告知或转接人工），输出直接作答策略。"
+    canned_response:
+      strict: false
+      template: |
+        {
+          "first_layer_strategy": "直接作答",
+          "second_layer_strategy": "<常规问题完整解答 | 多问题拆分解答 | 产品/服务推荐 | 操作指引说明 | 告知开户资质不符 | 告知符合开户条件 | 用户主动要求转接人工>",
+          "selected_candidate_id": ["<高度匹配的知识ID，无则填空数组>"],
+          "reasoning": "<简洁说明：1.用户意图分析；2.知识筛选逻辑（可用知识及选用原因）；3.策略匹配依据>",
+          "suggested_question": "",
+          "additional_guidance": "<针对本次作答的补充说明或注意事项>"
+        }
+    guidelines:
+      - condition: "用户问题清晰且已有完整知识支持"
+        action: "直接作答，并按逻辑顺序组织结构化信息"
+        priority: 100
+      - condition: "用户需要多问题或多选项的对比说明"
+        action: "按逻辑顺序逐一回复所有问题，不得遗漏"
+        priority: 95
+      - condition: "用户需要产品或服务的对比建议"
+        action: "结合用户需求对比选项，给出合理建议"
+        priority: 90
+      - condition: "用户需要操作指引或详细步骤"
+        action: "提供详细操作步骤与注意事项"
+        priority: 88
+      - condition: "用户询问是否符合开户资质"
+        action: "根据知识库内容明确告知是否符合条件，符合时推荐最优办理方式"
+        priority: 85
+      - condition: "用户主动要求转接人工"
+        action: "执行 docs/rules.md 规定的固定话术（业务要求不可修改）：您好，非常抱歉。您咨询的内容无法即时解答，即将为您转接人工客服，请您耐心等待。"
+        priority: 82
+  - name: structure_answer
+    description: "整理多知识点输出结构"
+    chat_state: "在直接作答后，应继续保持答案结构化，避免遗漏多项信息。"
+  - name: answer_followup
+    description: "补充推荐与注意事项"
+    chat_state: "根据已输出的结论补充必要的比较说明与下一步建议。"
+
+transitions:
+  - source: intake_and_decision
+    target: structure_answer
+    condition: "已完成直接作答策略判定"
+  - source: structure_answer
+    target: answer_followup
+    condition: "已完成结构化答案整理"
+
+global_guidelines:
+  - condition: "输出策略结果"
+    action: "严格输出 JSON，不附加任何额外说明文字"
+    priority: 100
+  - condition: "选用直接作答策略"
+    action: "仅引用高度相关知识，不得扩展到无关业务"
+    priority: 95

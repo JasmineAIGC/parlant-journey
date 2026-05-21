@@ -75,28 +75,28 @@ from tools.llm.client import (  # noqa: E402
 
 _SCHEMA_DESC = """\
 {
-  "title": "Journey 标题（字符串）",
-  "description": "Journey 整体描述（字符串）",
-  "conditions": ["触发此 Journey 的用户意图或关键词，至少 2 条"],
+  "title": "Journey title (string, required)",
+  "description": "Journey overview (string, required)",
+  "conditions": ["user intent or trigger phrase 1", "user intent or trigger phrase 2"],
   "states": [
     {
-      "name": "状态唯一 ID（英文小写+下划线）",
-      "description": "可读描述（中文，1 句话）",
-      "chat_state": "Agent 在此状态下的行为指令（中文，1-3 句话）",
-      "guidelines": [                        // 可选，节点级规则
-        {"condition": "触发条件", "action": "执行动作", "priority": 80}
+      "name": "state unique ID (snake_case recommended, required)",
+      "description": "human-readable state description (string)",
+      "chat_state": "agent behavior instruction for this state (string, required)",
+      "guidelines": [                        // optional: state-level behavior rules
+        {"condition": "trigger condition", "action": "expected action", "priority": 80}
       ],
-      "canned_response": {                   // 可选，合规话术
-        "template": "锁定输出的话术模板",
+      "canned_response": {                   // optional: constrained response template
+        "template": "exact response template text",
         "strict": true
       }
     }
   ],
-  "transitions": [                           // 按拓扑顺序排列
-    {"source": "源状态 name", "target": "目标状态 name", "condition": "转移条件（可选）"}
+  "transitions": [
+    {"source": "source state name", "target": "target state name", "condition": "transition condition (omit for unconditional)"}
   ],
-  "global_guidelines": [                     // 可选，全局规则
-    {"condition": "全局触发条件", "action": "全局执行动作", "priority": 60}
+  "global_guidelines": [                     // optional: journey-wide behavior rules
+    {"condition": "global trigger condition", "action": "global action", "priority": 60}
   ]
 }"""
 
@@ -109,11 +109,11 @@ _SYSTEM_PROMPT = f"""\
 1. 只输出 JSON，不要添加任何说明文字、markdown 代码块标记或其他内容。
 2. JSON 结构必须严格符合以下 schema（字段含义见注释）：
 {_SCHEMA_DESC}
-3. states 中每个状态必须有 name（英文小写+下划线）和 chat_state（中文）。
-4. transitions 按拓扑顺序排列（确保父节点的出边先于子节点的出边）。
-5. 终止状态（无出边的状态）通常命名为 closing 或 end，作为流程收尾。
-6. title、description、conditions 必须填写，不得为空。
-7. 规则（guidelines）的 priority 范围 0–100，数值越大越优先。
+3. states 中每个状态必须有 name 和 chat_state；description 建议填写。
+4. transitions 必须形成可达、连贯的流程，避免循环依赖。
+5. title、description、conditions 必须填写，不得为空。
+6. 规则（guidelines）的 priority 范围 0–100，数值越大越优先。
+7. 不限制具体业务领域与语言，按用户输入场景生成。
 """
 
 

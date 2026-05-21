@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from tools.parlant_server.server import (
-    DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET,
+    DEFAULT_PARLANT_PORT,
+    DEFAULT_PARLANT_TOOL_SERVICE_PORT,
     ParlantServerConfig,
     ParlantServerContext,
 )
@@ -46,7 +47,7 @@ async def test_context_passes_explicit_port_to_server_factory(monkeypatch: pytes
 
     assert captured['nlp_service'] == 'litellm'
     assert captured['port'] == 9321
-    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
 
 
 @pytest.mark.asyncio
@@ -71,11 +72,11 @@ async def test_context_explicit_port_overrides_server_kwargs_port(monkeypatch: p
         pass
 
     assert captured['port'] == 9321
-    assert captured['tool_service_port'] == 9321 + DEFAULT_PARLANT_TOOL_SERVICE_PORT_OFFSET
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
 
 
 @pytest.mark.asyncio
-async def test_context_explicit_tool_service_port_overrides_derived_value(
+async def test_context_explicit_tool_service_port_overrides_default_value(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured = {}
@@ -127,3 +128,30 @@ async def test_context_supports_port_in_config(monkeypatch: pytest.MonkeyPatch):
     assert captured['nlp_service'] == 'custom-nlp'
     assert captured['port'] == 9567
     assert captured['tool_service_port'] == 9599
+
+
+@pytest.mark.asyncio
+async def test_context_sets_default_tool_service_port_when_only_port_set(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When only port is provided, context still passes the default tool service port."""
+    captured = {}
+
+    def fake_server_factory(**kwargs):
+        captured.update(kwargs)
+        return _FakeServerContextManager(captured)
+
+    monkeypatch.setattr(
+        'tools.parlant_server.server._import_parlant_sdk',
+        lambda: SimpleNamespace(NLPServices=SimpleNamespace(litellm='litellm')),
+    )
+
+    async with ParlantServerContext(
+        port=9000,
+        bridge_env=False,
+        server_factory=fake_server_factory,
+    ):
+        pass
+
+    assert captured['port'] == 9000
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
