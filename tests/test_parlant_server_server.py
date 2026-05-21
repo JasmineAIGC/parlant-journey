@@ -47,7 +47,7 @@ async def test_context_passes_explicit_port_to_server_factory(monkeypatch: pytes
 
     assert captured['nlp_service'] == 'litellm'
     assert captured['port'] == 9321
-    assert 'tool_service_port' not in captured
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
 
 
 @pytest.mark.asyncio
@@ -72,11 +72,11 @@ async def test_context_explicit_port_overrides_server_kwargs_port(monkeypatch: p
         pass
 
     assert captured['port'] == 9321
-    assert 'tool_service_port' not in captured
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
 
 
 @pytest.mark.asyncio
-async def test_context_explicit_tool_service_port_overrides_derived_value(
+async def test_context_explicit_tool_service_port_overrides_default_value(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured = {}
@@ -131,8 +131,10 @@ async def test_context_supports_port_in_config(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-async def test_context_no_tool_service_port_when_only_port_set(monkeypatch: pytest.MonkeyPatch):
-    """port 设置时不自动派生 tool_service_port；Parlant Server 自行使用 DEFAULT_PARLANT_TOOL_SERVICE_PORT (8818)。"""
+async def test_context_sets_default_tool_service_port_when_only_port_set(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When only port is provided, context still passes the default tool service port."""
     captured = {}
 
     def fake_server_factory(**kwargs):
@@ -152,6 +154,4 @@ async def test_context_no_tool_service_port_when_only_port_set(monkeypatch: pyte
         pass
 
     assert captured['port'] == 9000
-    # tool_service_port 未被传入；Parlant Server 自行使用其默认值 DEFAULT_PARLANT_TOOL_SERVICE_PORT
-    assert 'tool_service_port' not in captured
-
+    assert captured['tool_service_port'] == DEFAULT_PARLANT_TOOL_SERVICE_PORT
