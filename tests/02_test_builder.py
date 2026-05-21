@@ -156,6 +156,35 @@ class Test预创建预设话术:
 
 class TestDAG线性拓扑:
     @pytest.mark.asyncio
+    async def test_乱序转移正常构建(self, mock_agent, mock_journey):
+        """转移以非拓扑顺序给出（B→C 先于 A→B），仍应正确构建。"""
+        trans_A, state_A = _trans("A")
+        trans_B, state_B = _trans("B")
+        trans_C, state_C = _trans("C")
+
+        mock_journey.initial_state.transition_to = AsyncMock(return_value=trans_A)
+        state_A.transition_to = AsyncMock(return_value=trans_B)
+        state_B.transition_to = AsyncMock(return_value=trans_C)
+
+        config = JourneyConfig(
+            title="T", conditions=["t"], description="d",
+            states=[
+                StateConfig(name="A", chat_state="步骤A"),
+                StateConfig(name="B", chat_state="步骤B"),
+                StateConfig(name="C", chat_state="步骤C"),
+            ],
+            transitions=[
+                TransitionConfig(source="B", target="C"),  # 顺序颠倒
+                TransitionConfig(source="A", target="B"),
+            ],
+        )
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        await builder._build_dag()
+
+        assert builder._state_obj_map == {"A": state_A, "B": state_B, "C": state_C}
+
+    @pytest.mark.asyncio
     async def test_线性流程按顺序创建状态(self, mock_agent, mock_journey):
         # 搭建 initial → A → B → C 的 mock 链
         trans_A, state_A = _trans("A")
@@ -430,22 +459,15 @@ class TestBuild整体流程:
         mock_journey.initial_state.transition_to.assert_awaited_once()
         mock_journey.create_guideline.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_缺少StateConfig时抛出ValueError(self, mock_agent, mock_journey):
-        # B 在 transitions 中引用，但未在 states 中定义
+    def test_未定义目标状态时构造阶段抛出ValueError(self, mock_agent):
+        """B 在 transitions 中引用，但未在 states 中定义 → 构造时立即报错。"""
         config = JourneyConfig(
             title="T", conditions=["t"], description="d",
             states=[StateConfig(name="A", chat_state="a")],
             transitions=[TransitionConfig(source="A", target="B")],
         )
-        builder = JourneyBuilder(mock_agent, config)
-        builder._journey = mock_journey
-        # A 已在 state_obj_map 中（模拟已被创建）
-        builder._state_obj_map["A"] = MagicMock(
-            transition_to=AsyncMock(return_value=MagicMock(target=MagicMock()))
-        )
         with pytest.raises(ValueError, match="B"):
-            await builder._build_dag()
+            JourneyBuilder(mock_agent, config)
 
     def test_重复状态名抛出ValueError(self, mock_agent):
         config = JourneyConfig(
@@ -455,6 +477,35 @@ class TestBuild整体流程:
         )
         with pytest.raises(ValueError, match="重复状态名"):
             JourneyBuilder(mock_agent, config)
+
+    def test_chat与tool同时设置构造阶段抛出ValueError(self, mock_agent):
+        """单个状态同时设置 chat_state 和 tool_state → 构造时立即报错。"""
+        config = JourneyConfig(
+            title="T", conditions=["t"], description="d",
+            states=[StateConfig(name="A", chat_state="文本", tool_state={"name": "my_tool"})],
+            transitions=[],
+        )
+        with pytest.raises(ValueError, match="chat_state 与 tool_state"):
+            JourneyBuilder(mock_agent, config)
+
+    @pytest.mark.asyncio
+    async def test_循环依赖时抛出ValueError(self, mock_agent, mock_journey):
+        """A → B → A 形成循环（无根节点），_build_dag 应抛出 ValueError。"""
+        config = JourneyConfig(
+            title="T", conditions=["t"], description="d",
+            states=[
+                StateConfig(name="A", chat_state="步骤A"),
+                StateConfig(name="B", chat_state="步骤B"),
+            ],
+            transitions=[
+                TransitionConfig(source="A", target="B"),
+                TransitionConfig(source="B", target="A"),
+            ],
+        )
+        builder = JourneyBuilder(mock_agent, config)
+        builder._journey = mock_journey
+        with pytest.raises(ValueError, match="循环依赖"):
+            await builder._build_dag()
 
 
 # ---------------------------------------------------------------------------

@@ -75,27 +75,27 @@ from tools.llm.client import (  # noqa: E402
 
 _SCHEMA_DESC = """\
 {
-  "title": "Journey title (string)",
-  "description": "Journey overview (string)",
-  "conditions": ["触发此 Journey 的用户意图或关键词，至少 2 条"],
+  "title": "Journey title (string, required)",
+  "description": "Journey overview (string, required)",
+  "conditions": ["user intent or trigger phrase 1", "user intent or trigger phrase 2"],
   "states": [
     {
-      "name": "state unique ID (snake_case recommended)",
+      "name": "state unique ID (snake_case recommended, required)",
       "description": "human-readable state description (string)",
-      "chat_state": "agent behavior instruction for this state (string)",
-      "guidelines": [                        // optional, state-level rules
+      "chat_state": "agent behavior instruction for this state (string, required)",
+      "guidelines": [                        // optional: state-level behavior rules
         {"condition": "trigger condition", "action": "expected action", "priority": 80}
       ],
-      "canned_response": {                   // optional, constrained response
-        "template": "response template to follow",
+      "canned_response": {                   // optional: constrained response template
+        "template": "exact response template text",
         "strict": true
       }
     }
   ],
   "transitions": [
-    {"source": "source state name", "target": "target state name", "condition": "transition condition (optional)"}
+    {"source": "source state name", "target": "target state name", "condition": "transition condition (omit for unconditional)"}
   ],
-  "global_guidelines": [                     // optional, global rules
+  "global_guidelines": [                     // optional: journey-wide behavior rules
     {"condition": "global trigger condition", "action": "global action", "priority": 60}
   ]
 }"""
