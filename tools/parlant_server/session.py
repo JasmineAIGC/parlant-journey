@@ -90,4 +90,24 @@ async def run_conversation(
                 reply = ev.data["message"]
                 break
 
+        event_id = getattr(evt, "id", None)
+        wait_for_event_completion = getattr(session_module, "wait_for_event_completion", None)
+        if event_id and callable(wait_for_event_completion):
+            try:
+                await asyncio.wait_for(
+                    wait_for_event_completion(
+                        session_id=session.id,
+                        event_id=event_id,
+                        timeout=Timeout(timeout),
+                    ),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "[run_conversation] 等待事件处理完成超时  session_id=%s  event_id=%s  timeout=%.2fs",
+                    session.id,
+                    event_id,
+                    timeout,
+                )
+
         yield user_msg, reply
