@@ -38,6 +38,7 @@ from journey import load_journey, register_journeys  # noqa: E402
 from tools.llm import prepare_litellm_environment  # noqa: E402
 
 PORT = 8800
+TOOL_SERVICE_PORT = 8801
 
 decision_configs = [
     load_journey(os.path.join(_DEMO_DIR, f))
@@ -66,6 +67,7 @@ async def run_demo() -> None:
     async with p.Server(
         nlp_service=p.NLPServices.litellm,
         port=PORT,
+        tool_service_port=TOOL_SERVICE_PORT,
     ) as server:
         agent = await server.create_agent(
             name="银行呼叫中心智能客服",
