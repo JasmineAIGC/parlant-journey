@@ -2,16 +2,22 @@
 demos/call_center/demo_call_center_native.py  —  银行智能呼叫中心（Parlant 原生 SDK）
 
 直接使用 parlant.sdk 的原生 API 构建 7 个呼叫中心决策 Journey：
-  • parlant.sdk.Server       —— 启动带 UI 的 HTTP Server
-  • server.create_agent()    —— 创建智能客服 Agent
-  • agent.create_journey()   —— 注册决策 Journey（含触发条件）
-  • journey.initial_state.transition_to() —— 定义对话状态
-  • journey.create_guideline() —— 注册全局行为规则
+  • parlant.sdk.Server                    —— 启动带 UI 的 HTTP Server
+  • server.create_agent()                 —— 创建智能客服 Agent
+  • agent.create_journey()                —— 注册决策 Journey（含触发条件）
+  • journey.initial_state.transition_to() —— 定义对话状态与转移
+  • journey.create_guideline()            —— 注册全局行为规则
+
+依赖说明：
+  • tools.llm.bridge_parlant_litellm_env()  —— 将项目 .env 中的
+    LLM_*/OPENAI_* 环境变量桥接为 Parlant LiteLLM 服务所需的
+    LITELLM_PROVIDER_* 变量，是驱动 NLPServices.litellm 所必需的
+    环境准备步骤（非 Parlant 核心 SDK 的一部分）。
 
 运行：
     python demos/call_center/demo_call_center_native.py
 
-服务器启动后，在浏览器中访问：
+服务器启动后（setup 完成并退出 async with 块时），在浏览器中访问：
     http://localhost:8800
 """
 
@@ -718,7 +724,8 @@ async def main() -> None:
         print(f"🌐 服务器即将启动，请在浏览器中访问：http://localhost:{PORT}")
         print("   在对话框中输入消息即可与 Agent 交互。")
         print("   按 Ctrl+C 停止服务器。\n")
-    # async with 块退出时，Parlant HTTP Server 在此处启动并阻塞，直到 Ctrl+C
+    # Parlant HTTP Server 在 async with 块退出时（__aexit__）启动 uvicorn，
+    # 并持续阻塞运行，直到收到 Ctrl+C 信号后才返回。
 
 
 if __name__ == "__main__":
